@@ -17,6 +17,7 @@ export default function MapCanvas(props: {
   stops?: Stop[]
   position?: LngLat | null
   center?: LngLat
+  showCenterPin?: boolean
   follow?: boolean
   onPick?: (c: LngLat) => void
   onStopClick?: (id: string) => void
@@ -25,6 +26,7 @@ export default function MapCanvas(props: {
   const map = useRef<MLMap | null>(null)
   const markers = useRef<Marker[]>([])
   const meMarker = useRef<Marker | null>(null)
+  const centerMarker = useRef<Marker | null>(null)
   const onPickRef = useRef(props.onPick)
   onPickRef.current = props.onPick
   const onStopClickRef = useRef(props.onStopClick)
@@ -60,6 +62,7 @@ export default function MapCanvas(props: {
     return () => {
       markers.current.forEach((mk) => mk.remove())
       meMarker.current?.remove()
+      centerMarker.current?.remove()
       m.remove()
       map.current = null
     }
@@ -91,25 +94,41 @@ export default function MapCanvas(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.coords])
 
+  // MapLibre repositions a Marker by writing `style.transform` directly onto
+  // the element it was given, on every camera frame. If our own CSS puts a
+  // transform (or a transform-driving animation) on that SAME element, the
+  // two fight over one style property and the marker visibly jitters/jumps.
+  // Fix: the element handed to `new Marker()` never carries a transform of
+  // its own — it's a plain anchor. Shape, rotation and the "next stop"
+  // pulse ring all live on child elements instead.
   useEffect(() => {
     const m = map.current
     if (!m) return
     markers.current.forEach((mk) => mk.remove())
     markers.current = []
     props.stops?.forEach((s, i) => {
-      const node = document.createElement('div')
-      node.className = 'stop-marker'
-      node.dataset.visited = String(s.status === 'visited')
-      node.dataset.next = String(s.status === 'next')
-      node.textContent = s.status === 'visited' ? '✓' : String(i + 1)
+      const anchor = document.createElement('div')
+      anchor.className = 'stop-pin'
+      anchor.dataset.visited = String(s.status === 'visited')
+      anchor.dataset.next = String(s.status === 'next')
+
+      const ring = document.createElement('div')
+      ring.className = 'stop-pin__ring'
+      anchor.appendChild(ring)
+
+      const badge = document.createElement('div')
+      badge.className = 'stop-pin__badge'
+      badge.textContent = s.status === 'visited' ? '✓' : String(i + 1)
+      anchor.appendChild(badge)
+
       if (onStopClickRef.current) {
-        node.style.cursor = 'pointer'
-        node.addEventListener('click', (ev) => {
+        anchor.style.cursor = 'pointer'
+        anchor.addEventListener('click', (ev) => {
           ev.stopPropagation()
           onStopClickRef.current?.(s.id)
         })
       }
-      markers.current.push(new Marker({ element: node }).setLngLat(s.coord).addTo(m))
+      markers.current.push(new Marker({ element: anchor }).setLngLat(s.coord).addTo(m))
     })
   }, [props.stops])
 
@@ -122,14 +141,41 @@ export default function MapCanvas(props: {
       return
     }
     if (!meMarker.current) {
-      const node = document.createElement('div')
-      node.className = 'me-marker'
-      meMarker.current = new Marker({ element: node }).setLngLat(props.position).addTo(m)
+      const anchor = document.createElement('div')
+      anchor.className = 'me-pin'
+      const pulse = document.createElement('div')
+      pulse.className = 'me-pin__pulse'
+      const dot = document.createElement('div')
+      dot.className = 'me-pin__dot'
+      anchor.appendChild(pulse)
+      anchor.appendChild(dot)
+      meMarker.current = new Marker({ element: anchor }).setLngLat(props.position).addTo(m)
     } else {
       meMarker.current.setLngLat(props.position)
     }
     if (props.follow) m.easeTo({ center: props.position, duration: 800 })
   }, [props.position, props.follow])
+
+  // A pin at the picker's chosen start point (location step only).
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+    if (!props.showCenterPin || !props.center) {
+      centerMarker.current?.remove()
+      centerMarker.current = null
+      return
+    }
+    if (!centerMarker.current) {
+      const anchor = document.createElement('div')
+      anchor.className = 'center-pin'
+      const drop = document.createElement('div')
+      drop.className = 'center-pin__drop'
+      anchor.appendChild(drop)
+      centerMarker.current = new Marker({ element: anchor, anchor: 'bottom' }).setLngLat(props.center).addTo(m)
+    } else {
+      centerMarker.current.setLngLat(props.center)
+    }
+  }, [props.center, props.showCenterPin])
 
   useEffect(() => {
     const m = map.current

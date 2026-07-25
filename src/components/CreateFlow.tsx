@@ -38,7 +38,7 @@ function VibeStep({ onNext }: { onNext: () => void }) {
             style={{ ['--vibe' as any]: v.color, ['--vibe-soft' as any]: v.soft }}
             onClick={() => setDraft({ vibe: v.id })}
           >
-            <span className="vibe-card__emoji">{v.emoji}</span>
+            <span className="vibe-card__icon">{v.emoji}</span>
             <span className="vibe-card__name">{v.name}</span>
             <span className="vibe-card__tag">{v.tagline}</span>
           </button>
@@ -138,7 +138,7 @@ function LocationStep({ onNext }: { onNext: () => void }) {
       )}
 
       <div className="picker-map">
-        <MapCanvas center={draft.start?.coord} onPick={pickOnMap} stops={draft.start ? [] : []} />
+        <MapCanvas center={draft.start?.coord} onPick={pickOnMap} showCenterPin />
         <div className="picker-map__hint">Tap the map to drop a start pin</div>
       </div>
 

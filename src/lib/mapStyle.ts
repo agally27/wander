@@ -11,20 +11,21 @@ import type { StyleSpecification } from 'maplibre-gl'
 const TILES = 'https://tiles.openfreemap.org/planet'
 const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
 
-const BG = '#EDE9E1'
-const WATER = '#AEC4CC'
-const PARK = '#D2E0C6'
-const WOOD = '#C4D6B6'
-const LANDUSE = '#E6E1D6'
-const BUILDING = '#DED8CB'
-const BUILDING_LINE = '#CFC8B7'
-const ROAD_CASING = '#D6D0C0'
-const ROAD_MAJOR = '#FBFAF6'
-const ROAD_MINOR = '#F4F2EA'
-const PATH = '#C9A97E'
-const RAIL = '#C2BCAB'
-const LABEL = '#5A5648'
+const BG = '#EAE5D9'
+const WATER = '#9BC0CC'
+const PARK = '#C4D9B3'
+const WOOD = '#AFCFA0'
+const LANDUSE = '#E3DDCC'
+const BUILDING = '#D9D1BE'
+const BUILDING_LINE = '#C7BCA3'
+const ROAD_CASING = '#CFC6AE'
+const ROAD_MAJOR = '#FDFCF8'
+const ROAD_MINOR = '#F5F2E9'
+const PATH = '#BE8F55'
+const RAIL = '#BBB39C'
+const LABEL = '#514C3D'
 const LABEL_HALO = '#F4F1E8'
+const ROAD_LABEL = '#6B6250'
 
 export function buildPaperStyle(): StyleSpecification {
   return {
@@ -81,6 +82,31 @@ export function buildPaperStyle(): StyleSpecification {
         id: 'paths', type: 'line', source: 'omt', 'source-layer': 'transportation',
         filter: ['==', ['get', 'class'], 'path'], layout: { 'line-cap': 'round' },
         paint: { 'line-color': PATH, 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 17, 3], 'line-dasharray': [2.5, 2] },
+      },
+      {
+        id: 'road-name', type: 'symbol', source: 'omt', 'source-layer': 'transportation_name',
+        minzoom: 14,
+        filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service', 'path'], true, false],
+        layout: {
+          'symbol-placement': 'line',
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 14, 10, 18, 13],
+          'text-letter-spacing': 0.02,
+        },
+        paint: { 'text-color': ROAD_LABEL, 'text-halo-color': LABEL_HALO, 'text-halo-width': 1.4 },
+      },
+      {
+        id: 'poi-green-labels', type: 'symbol', source: 'omt', 'source-layer': 'poi',
+        minzoom: 14,
+        filter: ['match', ['get', 'class'], ['park', 'garden'], true, false],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Italic'],
+          'text-size': 11,
+          'text-max-width': 7,
+        },
+        paint: { 'text-color': '#3F6B49', 'text-halo-color': LABEL_HALO, 'text-halo-width': 1.4 },
       },
       {
         id: 'place-labels', type: 'symbol', source: 'omt', 'source-layer': 'place',

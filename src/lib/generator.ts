@@ -63,8 +63,9 @@ export async function generateWalk(
   let candidates: Candidate[] = []
   try {
     candidates = await findCandidates(scouts.flatMap((s) => s.coords.filter((_, i) => i % 4 === 0)))
-  } catch {
+  } catch (e) {
     candidates = [] // Overpass down → wander spots carry the walk
+    console.warn('[wander] Could not reach Overpass — falling back to wander spots', e)
   }
 
   onProgress('choosing')
@@ -118,6 +119,9 @@ export async function generateWalk(
       status: i === 0 ? 'next' : 'ahead',
     }
   })
+
+  const realCount = stops.filter((s) => s.placeName).length
+  console.info(`[wander] Walk built with ${realCount}/${stops.length} real places from ${candidates.length} candidates found`)
 
   onProgress('ready')
   return {
@@ -182,7 +186,7 @@ export function rankAndSelect(
       }
       return { ...c, offKm: best, t: cum[bi] / total }
     })
-    .filter((c) => c.offKm < 0.3 && c.t > 0.04 && c.t < 0.96)
+    .filter((c) => c.offKm < 0.4 && c.t > 0.03 && c.t < 0.97)
 
   const chosen: Chosen[] = []
   const usedCats = new Map<StopCategory, number>()

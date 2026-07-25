@@ -45,7 +45,13 @@ export function CatIcon(props: { category: StopCategory; size?: number }) {
   return (
     <div
       className="cat-icon"
-      style={{ width: s, height: s, background: c.color + '22', color: c.color, fontSize: s * 0.5 }}
+      style={{
+        width: s,
+        height: s,
+        background: `radial-gradient(circle at 30% 25%, ${c.color}33, ${c.color}18 75%)`,
+        color: c.color,
+        fontSize: s * 0.5,
+      }}
       aria-hidden
     >
       {c.emoji}

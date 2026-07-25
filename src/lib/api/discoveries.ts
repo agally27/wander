@@ -114,20 +114,25 @@ async function queryOverpass(body: string): Promise<any> {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
+        // Explicit Content-Type: a plain string body would otherwise default
+        // to text/plain, and some Overpass mirrors only unpack the `data`
+        // field when the request is properly form-encoded.
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `data=${encodeURIComponent(body)}`,
       })
-      if (!res.ok) throw new Error(`Overpass failed (${res.status})`)
+      if (!res.ok) throw new Error(`Overpass failed (${res.status}) at ${endpoint}`)
       return await res.json()
     } catch (e) {
       lastErr = e
+      console.warn('[wander] Overpass endpoint failed, trying next', endpoint, e)
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error('Overpass unreachable')
 }
 
-export async function findCandidates(routeCoords: LngLat[], padKm = 0.35): Promise<Candidate[]> {
+export async function findCandidates(routeCoords: LngLat[], padKm = 0.45): Promise<Candidate[]> {
   const bbox = bboxAround(routeCoords, padKm)
-  const body = `[out:json][timeout:16];(${SELECTORS.map(([s]) => `${s}(${bbox});`).join('')});out center 200;`
+  const body = `[out:json][timeout:20];(${SELECTORS.map(([s]) => `${s}(${bbox});`).join('')});out center 300;`
   const data = await queryOverpass(body)
   const out: Candidate[] = []
   for (const el of data.elements ?? []) {
@@ -140,7 +145,9 @@ export async function findCandidates(routeCoords: LngLat[], padKm = 0.35): Promi
     if (!category) continue
     out.push({ coord: [lon, lat], name: tags.name, category })
   }
-  return dedupe(out)
+  const kept = dedupe(out)
+  console.info(`[wander] Overpass returned ${data.elements?.length ?? 0} elements → ${kept.length} usable candidates`)
+  return kept
 }
 
 function categorise(tags: Record<string, string>): StopCategory | null {
