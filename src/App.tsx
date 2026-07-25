@@ -3,6 +3,7 @@ import HomeScreen from './components/HomeScreen'
 import CreateFlow from './components/CreateFlow'
 import GeneratingScreen from './components/GeneratingScreen'
 import PreviewScreen from './components/PreviewScreen'
+import FlyoverScreen from './components/FlyoverScreen'
 import WalkScreen from './components/WalkScreen'
 import DoneScreen from './components/DoneScreen'
 import SavedScreen from './components/SavedScreen'
@@ -16,6 +17,7 @@ export default function App() {
       {screen === 'create' && <CreateFlow />}
       {screen === 'generating' && <GeneratingScreen />}
       {screen === 'preview' && <PreviewScreen />}
+      {screen === 'flyover' && <FlyoverScreen />}
       {screen === 'walk' && <WalkScreen />}
       {screen === 'done' && <DoneScreen />}
       {screen === 'saved' && <SavedScreen />}

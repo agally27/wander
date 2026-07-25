@@ -126,6 +126,37 @@ export function pointAtDistance(coords: LngLat[], cum: number[], distKm: number)
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
 }
 
+/**
+ * Nearest point on a polyline to p — a true perpendicular projection onto
+ * each segment, not just the closest vertex.
+ *
+ * Returns where that point sits (`coord`), how far along the line it is
+ * (`alongKm`), and how far p was from the line (`offKm`). Used to pin a
+ * stop onto the walked route so its marker always sits on the drawn path.
+ */
+export function snapToPolyline(
+  coords: LngLat[],
+  cum: number[],
+  p: LngLat,
+): { coord: LngLat; alongKm: number; offKm: number } {
+  let best = { coord: coords[0], alongKm: 0, offKm: Infinity }
+  for (let i = 1; i < coords.length; i++) {
+    const a = coords[i - 1]
+    const b = coords[i]
+    const { t, perpKm } = projectParam(a, b, p)
+    const clamped = Math.max(0, Math.min(1, t))
+    const coord: LngLat = [a[0] + (b[0] - a[0]) * clamped, a[1] + (b[1] - a[1]) * clamped]
+    // perpKm is only the true distance when the projection lands inside the
+    // segment; outside it, measure to the clamped endpoint instead.
+    const offKm = t >= 0 && t <= 1 ? perpKm : haversineKm(p, coord)
+    if (offKm < best.offKm) {
+      const segKm = cum[i] - cum[i - 1]
+      best = { coord, alongKm: cum[i - 1] + segKm * clamped, offKm }
+    }
+  }
+  return best
+}
+
 export function bboxOf(coords: LngLat[]): [LngLat, LngLat] {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const [x, y] of coords) {

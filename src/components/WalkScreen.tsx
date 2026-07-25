@@ -93,7 +93,9 @@ function StopSheet({ stop, onClose }: { stop: Stop; onClose: () => void }) {
   useEffect(() => {
     let live = true
     if (stop.placeName) {
-      findPlaceImage(stop.coord, stop.placeName).then((i) => live && setImg(i))
+      // Look the photo up at the real OSM location, not the snapped-to-route
+      // marker position, so geosearch centres on the actual place.
+      findPlaceImage(stop.placeCoord ?? stop.coord, stop.placeName).then((i) => live && setImg(i))
     }
     return () => {
       live = false

@@ -1,5 +1,5 @@
 import type { Walk, Pace, Place, Stop, StopCategory, LngLat, VibeId } from './types'
-import { cumulativeKm, haversineKm, pointAtDistance, seeded } from './geo'
+import { cumulativeKm, haversineKm, pointAtDistance, seeded, snapToPolyline } from './geo'
 import { fetchWalkRoute, loopWaypoints, type RawRoute } from './api/routing'
 import { findCandidates, type Candidate } from './api/discoveries'
 import { contentFor, pick, walkIntro, walkTitle, teaserFor } from './content'
@@ -88,27 +88,51 @@ export async function generateWalk(
       coords = final.coords
       distanceKm = final.distanceKm
       timeMin = final.timeMin
-      const cum = cumulativeKm(coords)
-      chosen.forEach((c, i) => {
-        if (!c.fromMap) c.coord = pointAtDistance(coords, cum, ((i + 1) / (chosen.length + 1)) * distanceKm)
-      })
-    } catch {
-      /* keep the scout loop */
+    } catch (e) {
+      // Keep the scout loop. Snapping below still pins every stop onto it,
+      // so markers can never end up floating off the drawn route.
+      console.warn('[wander] Could not re-route through the picks — keeping the scout loop', e)
     }
   }
 
-  let prev = start.coord
+  // Pin every stop onto the route we actually drew.
+  //
+  // Routing engines snap waypoints to the nearest walkable way, and polygon
+  // features (parks, gardens) report a centroid that can sit well off any
+  // path — so a raw OSM coordinate is often a little to one side of the
+  // route. Projecting each stop onto the final polyline guarantees its
+  // marker sits ON the walk, and gives us its true distance along the route.
+  const cum = cumulativeKm(coords)
+  const placed = chosen
+    .map((c) => {
+      const snapped = snapToPolyline(coords, cum, c.coord)
+      return { c, coord: snapped.coord, alongKm: snapped.alongKm, offKm: snapped.offKm }
+    })
+    // Re-routing can reorder the walk, so sort by real position along the
+    // final line — otherwise stop numbers zig-zag back and forth on the map.
+    .sort((a, b) => a.alongKm - b.alongKm)
+
+  const strayed = placed.filter((p) => p.c.fromMap && p.offKm > 0.15)
+  if (strayed.length) {
+    console.warn(`[wander] ${strayed.length} stop(s) sat >150 m off the route and were pulled onto it`,
+      strayed.map((p) => ({ name: p.c.name, offMetres: Math.round(p.offKm * 1000) })))
+  }
+
+  let prevKm = 0
   let etaMin = 0
-  const stops: Stop[] = chosen.map((c, i) => {
+  const stops: Stop[] = placed.map((p, i) => {
+    const c = p.c
     const content = contentFor(c.category)
-    const distFromPrevKm = haversineKm(prev, c.coord)
+    // Distance along the path, not straight-line — matches what you walk.
+    const distFromPrevKm = Math.max(0, p.alongKm - prevKm)
     etaMin += (distFromPrevKm / speed) * 60 + (i === 0 ? 0 : STOP_MIN)
-    prev = c.coord
+    prevKm = p.alongKm
     return {
       id: `s${i + 1}`,
       title: c.name ? c.name : pick(content.titles, rng),
       placeName: c.name,
-      coord: c.coord,
+      coord: p.coord,
+      placeCoord: c.fromMap ? c.coord : undefined,
       category: c.category,
       order: i + 1,
       blurb: pick(content.blurbs, rng),
@@ -186,7 +210,9 @@ export function rankAndSelect(
       }
       return { ...c, offKm: best, t: cum[bi] / total }
     })
-    .filter((c) => c.offKm < 0.4 && c.t > 0.03 && c.t < 0.97)
+    // Keep picks genuinely close to the walked line — anything further would
+    // have to be dragged a long way onto the route to be reachable.
+    .filter((c) => c.offKm < 0.22 && c.t > 0.03 && c.t < 0.97)
 
   const chosen: Chosen[] = []
   const usedCats = new Map<StopCategory, number>()

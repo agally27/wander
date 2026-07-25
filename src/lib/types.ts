@@ -59,7 +59,18 @@ export interface Stop {
   title: string
   /** real place name from OpenStreetMap, when we have one */
   placeName?: string
+  /**
+   * Where the stop sits ON the walked route — snapped to the route line so
+   * its marker always lies on the drawn path and proximity unlocking matches
+   * what you actually walk past.
+   */
   coord: LngLat
+  /**
+   * The true OpenStreetMap coordinate of the place, before snapping. Used
+   * for photo lookup; may sit a little off the path (e.g. a pub set back
+   * from the street, or a park centroid).
+   */
+  placeCoord?: LngLat
   category: StopCategory
   /** 1-based order along the walk */
   order: number
@@ -131,6 +142,7 @@ export type Screen =
   | 'create'
   | 'generating'
   | 'preview'
+  | 'flyover'
   | 'walk'
   | 'done'
   | 'saved'

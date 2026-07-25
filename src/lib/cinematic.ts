@@ -1,0 +1,131 @@
+import type { Walk, LngLat } from './types'
+import { cumulativeKm, haversineKm } from './geo'
+
+/**
+ * The fly-over director. Turns a Walk into a scene timeline that the player
+ * performs in real time on the live map — no video, no pre-rendering, driven
+ * entirely by the walk data.
+ *
+ * Scene flow:
+ *   intro → launch → (travel → stop) × n → travel home → finale
+ *
+ * Camera work is Elecride's fly-through, re-tuned: Elecride paces a bike
+ * ride at pitch 62 / zoom 14.6 with a look-ahead bearing and a 6% easing
+ * turn. Here the pace is a walking glide, the camera sits lower and closer,
+ * and the flight pauses to zoom in at every stop rather than running the
+ * route end to end.
+ */
+
+export type SceneKind = 'intro' | 'launch' | 'travel' | 'stop' | 'finale'
+
+export interface Scene {
+  kind: SceneKind
+  durationMs: number
+  /** travel scenes: route km window this scene covers */
+  fromKm: number
+  toKm: number
+  /** stop scenes: index into walk.stops */
+  stopIndex?: number
+}
+
+export interface Timeline {
+  scenes: Scene[]
+  totalKm: number
+  cum: number[]
+  /** km along the route of each stop */
+  stopKm: number[]
+}
+
+export const CAM = {
+  travelPitch: 60,
+  travelZoom: 16,
+  stopPitch: 34,
+  stopZoom: 17,
+  lookAheadKm: 0.16,
+  bearingEase: 0.07,
+}
+
+const INTRO_MS = 3000
+const LAUNCH_MS = 1900
+const STOP_MS = 4000
+const FINALE_MS = 2600
+const MIN_TRAVEL_MS = 650
+
+export function buildTimeline(walk: Walk): Timeline {
+  const cum = cumulativeKm(walk.coords)
+  const totalKm = cum[cum.length - 1] || 0.001
+
+  // km position of each stop = nearest route vertex's cumulative distance
+  const stopKm = walk.stops.map((s) => {
+    let best = Infinity
+    let bi = 0
+    for (let i = 0; i < walk.coords.length; i += 2) {
+      const dist = haversineKm(s.coord, walk.coords[i])
+      if (dist < best) {
+        best = dist
+        bi = i
+      }
+    }
+    return cum[bi]
+  })
+
+  // enforce ascending order so travel segments never run backwards
+  for (let i = 1; i < stopKm.length; i++) {
+    if (stopKm[i] <= stopKm[i - 1]) stopKm[i] = Math.min(totalKm, stopKm[i - 1] + 0.02)
+  }
+
+  // total travel budget: the whole fly-over lands around 25–60 s
+  const travelBudget = Math.min(28000, Math.max(15000, totalKm * 9000))
+
+  const scenes: Scene[] = [
+    { kind: 'intro', durationMs: INTRO_MS, fromKm: 0, toKm: 0 },
+    { kind: 'launch', durationMs: LAUNCH_MS, fromKm: 0, toKm: 0 },
+  ]
+  let cursor = 0
+  stopKm.forEach((km, i) => {
+    const seg = Math.max(0.01, km - cursor)
+    scenes.push({
+      kind: 'travel',
+      durationMs: Math.max(MIN_TRAVEL_MS, (seg / totalKm) * travelBudget),
+      fromKm: cursor,
+      toKm: km,
+    })
+    scenes.push({ kind: 'stop', durationMs: STOP_MS, fromKm: km, toKm: km, stopIndex: i })
+    cursor = km
+  })
+  scenes.push({
+    kind: 'travel',
+    durationMs: Math.max(MIN_TRAVEL_MS, ((totalKm - cursor) / totalKm) * travelBudget),
+    fromKm: cursor,
+    toKm: totalKm,
+  })
+  scenes.push({ kind: 'finale', durationMs: FINALE_MS, fromKm: totalKm, toKm: totalKm })
+  return { scenes, totalKm, cum, stopKm }
+}
+
+/** Index of the scene that shows stop i. */
+export function sceneIndexOfStop(tl: Timeline, i: number): number {
+  return tl.scenes.findIndex((s) => s.kind === 'stop' && s.stopIndex === i)
+}
+
+/** Route slice from 0..km for the progressive trail reveal. */
+export function routeSliceTo(coords: LngLat[], cum: number[], km: number): LngLat[] {
+  if (km <= 0) return [coords[0], coords[0]]
+  const out: LngLat[] = []
+  for (let i = 0; i < coords.length; i++) {
+    if (cum[i] <= km) out.push(coords[i])
+    else {
+      // interpolate the exact tip so the trail grows smoothly
+      const prev = Math.max(0, i - 1)
+      const span = cum[i] - cum[prev] || 1
+      const t = (km - cum[prev]) / span
+      out.push([
+        coords[prev][0] + (coords[i][0] - coords[prev][0]) * t,
+        coords[prev][1] + (coords[i][1] - coords[prev][1]) * t,
+      ])
+      break
+    }
+  }
+  if (out.length < 2) out.push(out[0])
+  return out
+}

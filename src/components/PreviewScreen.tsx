@@ -15,6 +15,9 @@ export default function PreviewScreen() {
 
       <div className="preview-map">
         <MapCanvas coords={current.coords} stops={current.stops} />
+        <button className="preview-map__fly" onClick={() => goto('flyover')}>
+          ▶ Fly the route
+        </button>
       </div>
 
       <div className="preview-body">
