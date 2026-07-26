@@ -3,6 +3,7 @@ import { useApp } from '../store'
 import { VIBES } from '../lib/vibes'
 import { searchPlaces, reverseGeocode } from '../lib/api/geocode'
 import type { LngLat, Place } from '../lib/types'
+import { formatDistance } from '../lib/units'
 import { Btn, Header } from './ui'
 import MapCanvas from './MapCanvas'
 
@@ -183,7 +184,7 @@ function LocationStep({ onNext }: { onNext: () => void }) {
 }
 
 function LengthStep({ onGenerate }: { onGenerate: () => void }) {
-  const { draft, setDraft } = useApp()
+  const { draft, setDraft, unit } = useApp()
   const durations = [30, 45, 60, 90]
   return (
     <div className="step">
@@ -210,9 +211,25 @@ function LengthStep({ onGenerate }: { onGenerate: () => void }) {
         </button>
       </div>
 
+      <p className="step__lead" style={{ marginTop: 28 }}>Shape</p>
+      <div className="chips">
+        <button className={'chip' + (draft.shape === 'loop' ? ' is-sel' : '')} onClick={() => setDraft({ shape: 'loop' })}>
+          🔁 Loop
+        </button>
+        <button className={'chip' + (draft.shape === 'outAndBack' ? ' is-sel' : '')} onClick={() => setDraft({ shape: 'outAndBack' })}>
+          ↔️ There & back
+        </button>
+      </div>
+      <p className="hint" style={{ padding: '6px 2px 0' }}>
+        {draft.shape === 'loop'
+          ? 'Different streets out and back, ending where you started.'
+          : 'Out one way, then back along the very same path.'}
+      </p>
+
       <div className="summary-note">
-        We’ll route a loop of roughly {Math.round((draft.durationMin / 60) * (draft.pace === 'stroll' ? 3.6 : 4.8) * 10) / 10} km
-        on real footpaths, then thread it through the best real places nearby.
+        We’ll route {draft.shape === 'loop' ? 'a loop' : 'a there-and-back walk'} of roughly{' '}
+        {formatDistance((draft.durationMin / 60) * (draft.pace === 'stroll' ? 3.6 : 4.8), unit)} on real footpaths,
+        then thread it through the best real places nearby.
       </div>
 
       <div className="step__actions">

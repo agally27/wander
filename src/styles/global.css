@@ -92,6 +92,17 @@ h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-s
 .steps { color: var(--ink-faint); font-size: 13px; font-weight: 600; }
 .pill { padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
 
+.unit-toggle {
+  display: inline-flex; background: var(--card); border-radius: 999px; padding: 3px;
+  box-shadow: var(--shadow), var(--inset-hi);
+}
+.unit-toggle button {
+  border: none; background: transparent; padding: 7px 13px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
+}
+.unit-toggle button.is-on { background: var(--ink); color: var(--paper); }
+.unit-toggle--sm button { padding: 5px 10px; font-size: 11.5px; }
+
 .banner { border-radius: 12px; padding: 11px 14px; font-size: 13.5px; margin-bottom: 12px; }
 .banner--err { background: #F7E3DE; color: var(--err); }
 .banner--warn { background: #F5EAD8; color: var(--warn); }
@@ -120,6 +131,10 @@ h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-s
 .stat__n { display: block; font-family: 'Fraunces', serif; font-size: 26px; color: var(--ink); }
 .stat__l { font-size: 12px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
 
+.home__units {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 4px 18px; font-size: 13px; color: var(--ink-soft); font-weight: 600;
+}
 .home__cards { display: flex; flex-direction: column; gap: 12px; }
 .home__card {
   text-align: left; background: var(--card); border: none; border-radius: var(--radius);
@@ -227,7 +242,8 @@ h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-s
 }
 .preview-body { padding: 20px; }
 .preview__title { font-size: 27px; line-height: 1.15; }
-.preview__meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-soft); font-size: 13.5px; font-weight: 600; margin: 10px 0 14px; }
+.preview__meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; color: var(--ink-soft); font-size: 13.5px; font-weight: 600; margin: 10px 0 14px; }
+.preview__meta .unit-toggle { margin-left: auto; }
 .preview__intro { color: var(--ink-soft); font-size: 14.5px; line-height: 1.55; margin: 0 0 8px; }
 .preview__note { font-size: 13px; color: var(--accent-ink); background: var(--accent-soft); border-radius: 10px; padding: 9px 12px; }
 

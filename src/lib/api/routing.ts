@@ -102,6 +102,18 @@ export function loopWaypoints(start: LngLat, targetKm: number, headingDeg: numbe
   return pts
 }
 
+/**
+ * A there-and-back reach of roughly `oneWayKm`, straight out from `start`.
+ * Real paths wander more than a straight line, so the same road-network
+ * correction factor as loopWaypoints keeps the actual walked distance close
+ * to what was asked for. The route back is the same path, mirrored — see
+ * generator.ts, which appends the reversed outbound coords itself.
+ */
+export function outAndBackWaypoints(start: LngLat, oneWayKm: number, headingDeg: number): LngLat[] {
+  const reach = Math.max(0.15, oneWayKm * 0.8)
+  return [start, destination(start, reach, headingDeg)]
+}
+
 /** Order candidate waypoints greedily from the start so the walk flows one way. */
 export function orderByNearestNeighbour(start: LngLat, points: LngLat[]): LngLat[] {
   const left = [...points]

@@ -1,9 +1,11 @@
 import { create } from 'zustand'
-import type { FieldNote, LngLat, Pace, Place, Screen, Stats, Stop, VibeId, Walk } from './lib/types'
+import type { FieldNote, LngLat, Pace, Place, Screen, Stats, Stop, VibeId, Walk, WalkShape } from './lib/types'
 import { generateWalk, type GenProgress } from './lib/generator'
 import { cumulativeKm, haversineKm, pointAtDistance } from './lib/geo'
+import type { Unit } from './lib/units'
 import {
   loadNotes, loadStats, loadWalks, saveNotes, saveStats, saveWalks, emptyStats,
+  loadUnit, saveUnit,
 } from './lib/persist'
 
 /** Unlock radius in km (~40 m) — generous enough that GPS drift never blocks a stop. */
@@ -14,6 +16,7 @@ interface CreateDraft {
   vibe: VibeId | null
   durationMin: number
   pace: Pace
+  shape: WalkShape
   start: Place | null
 }
 
@@ -59,6 +62,10 @@ interface AppState {
   isSaved: (coord: LngLat) => boolean
 
   stats: Stats
+
+  unit: Unit
+  setUnit: (u: Unit) => void
+  toggleUnit: () => void
 }
 
 const freshDraft = (): CreateDraft => ({
@@ -66,6 +73,7 @@ const freshDraft = (): CreateDraft => ({
   vibe: null,
   durationMin: 45,
   pace: 'stroll',
+  shape: 'loop',
   start: null,
 })
 
@@ -103,7 +111,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ screen: 'generating', genProgress: 'sizing', genError: null })
     try {
       const walk = await generateWalk(
-        { vibe: draft.vibe, durationMin: draft.durationMin, pace: draft.pace, start: draft.start },
+        { vibe: draft.vibe, durationMin: draft.durationMin, pace: draft.pace, shape: draft.shape, start: draft.start },
         (p) => set({ genProgress: p }),
       )
       const walks = [walk, ...get().walks]
@@ -136,7 +144,7 @@ export const useApp = create<AppState>((set, get) => ({
     const w = get().current
     if (!w) return
     set({
-      draft: { step: 1, vibe: w.vibe, durationMin: w.requestedMin, pace: w.pace, start: w.start },
+      draft: { step: 1, vibe: w.vibe, durationMin: w.requestedMin, pace: w.pace, shape: w.shape, start: w.start },
       genError: null,
       screen: 'create',
     })
@@ -263,6 +271,17 @@ export const useApp = create<AppState>((set, get) => ({
   isSaved: (coord) => get().notes.some((n) => haversineKm(n.coord, coord) < 0.02),
 
   stats: loadStats(),
+
+  unit: loadUnit(),
+  setUnit: (u) => {
+    saveUnit(u)
+    set({ unit: u })
+  },
+  toggleUnit: () => {
+    const u = get().unit === 'mi' ? 'km' : 'mi'
+    saveUnit(u)
+    set({ unit: u })
+  },
 }))
 
 function persistCurrent(set: (p: Partial<AppState>) => void, get: () => AppState, updated: Walk) {

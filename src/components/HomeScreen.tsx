@@ -1,8 +1,9 @@
 import { useApp } from '../store'
-import { Btn } from './ui'
+import { formatDistance, formatDistanceValue } from '../lib/units'
+import { Btn, UnitToggle } from './ui'
 
 export default function HomeScreen() {
-  const { goto, resetDraft, walks, notes, stats } = useApp()
+  const { goto, resetDraft, walks, notes, stats, unit } = useApp()
   const inProgress = walks.filter((w) => w.state === 'active')
 
   return (
@@ -32,9 +33,14 @@ export default function HomeScreen() {
           <span className="stat__l">stops</span>
         </div>
         <div className="stat">
-          <span className="stat__n">{stats.kmWalked}</span>
-          <span className="stat__l">km</span>
+          <span className="stat__n">{formatDistanceValue(stats.kmWalked, unit)}</span>
+          <span className="stat__l">{unit}</span>
         </div>
+      </div>
+
+      <div className="home__units">
+        <span>Distance</span>
+        <UnitToggle sm />
       </div>
 
       <div className="home__cards">
@@ -42,7 +48,9 @@ export default function HomeScreen() {
           <button className="home__card home__card--accent" onClick={() => useApp.getState().openWalk(inProgress[0].id)}>
             <div className="home__card-k">Continue</div>
             <div className="home__card-t">{inProgress[0].title}</div>
-            <div className="home__card-s">{inProgress[0].stops.filter((s) => s.status === 'visited').length}/{inProgress[0].stops.length} stops · {inProgress[0].distanceKm} km</div>
+            <div className="home__card-s">
+              {inProgress[0].stops.filter((s) => s.status === 'visited').length}/{inProgress[0].stops.length} stops · {formatDistance(inProgress[0].distanceKm, unit)}
+            </div>
           </button>
         )}
         <button className="home__card" onClick={() => goto('walks')}>

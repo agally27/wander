@@ -1,9 +1,11 @@
 import type { FieldNote, Stats, Walk } from './types'
+import type { Unit } from './units'
 import { reconcileWalk } from './generator'
 
 const WALKS_KEY = 'wander.walks.v1'
 const NOTES_KEY = 'wander.fieldnotes.v1'
 const STATS_KEY = 'wander.stats.v1'
+const UNIT_KEY = 'wander.unit.v1'
 
 export const emptyStats = (): Stats => ({ walksCompleted: 0, stopsVisited: 0, kmWalked: 0 })
 
@@ -54,6 +56,24 @@ export function loadStats(): Stats {
 export function saveStats(s: Stats) {
   try {
     localStorage.setItem(STATS_KEY, JSON.stringify(s))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Miles by default. */
+export function loadUnit(): Unit {
+  try {
+    const raw = localStorage.getItem(UNIT_KEY)
+    return raw === 'km' || raw === 'mi' ? raw : 'mi'
+  } catch {
+    return 'mi'
+  }
+}
+
+export function saveUnit(u: Unit) {
+  try {
+    localStorage.setItem(UNIT_KEY, u)
   } catch {
     /* ignore */
   }

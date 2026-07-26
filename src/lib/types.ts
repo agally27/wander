@@ -8,6 +8,9 @@ export interface Place {
 
 export type VibeId = 'gems' | 'history' | 'pub' | 'foodie' | 'culture' | 'green'
 export type Pace = 'stroll' | 'brisk'
+/** loop: returns to the start via different streets. outAndBack: walks out
+ *  and returns along the very same path — a there-and-back. */
+export type WalkShape = 'loop' | 'outAndBack'
 
 /**
  * Categories of real place we surface on an adult walk. Superset of the
@@ -92,12 +95,14 @@ export interface Walk {
   title: string
   vibe: VibeId
   pace: Pace
+  shape: WalkShape
   requestedMin: number
   estMinutes: number
   distanceKm: number
   intro: string
   start: Place
-  /** full walking line: start → stops → back to start */
+  /** full walking line: start → stops → back to start (loop), or
+   *  start → stops → turnaround → back the same way (outAndBack) */
   coords: LngLat[]
   stops: Stop[]
   createdAt: number

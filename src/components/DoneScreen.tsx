@@ -1,9 +1,10 @@
 import { useApp } from '../store'
 import { vibeMeta } from '../lib/vibes'
+import { formatDistanceValue } from '../lib/units'
 import { Btn, CatIcon } from './ui'
 
 export default function DoneScreen() {
-  const { current, goto, notes, resetDraft } = useApp()
+  const { current, goto, notes, resetDraft, unit } = useApp()
   if (!current) return null
   const v = vibeMeta(current.vibe)
   const visited = current.stops.filter((s) => s.status === 'visited').length
@@ -18,7 +19,7 @@ export default function DoneScreen() {
       </div>
 
       <div className="done__stats">
-        <div className="stat"><span className="stat__n">{current.distanceKm}</span><span className="stat__l">km</span></div>
+        <div className="stat"><span className="stat__n">{formatDistanceValue(current.distanceKm, unit)}</span><span className="stat__l">{unit}</span></div>
         <div className="stat"><span className="stat__n">{visited}</span><span className="stat__l">stops</span></div>
         <div className="stat"><span className="stat__n">{current.estMinutes}</span><span className="stat__l">min</span></div>
       </div>

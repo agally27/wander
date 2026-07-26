@@ -7,6 +7,7 @@ import { bboxOf, bearingDeg, pointAtDistance } from '../lib/geo'
 import { buildTimeline, routeSliceTo, sceneIndexOfStop, CAM, type Timeline } from '../lib/cinematic'
 import { findPlaceImage, type PlaceImage } from '../lib/api/imagery'
 import { vibeMeta } from '../lib/vibes'
+import { formatDistance } from '../lib/units'
 import { CatIcon, catLabel } from './ui'
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] } as any
@@ -36,7 +37,7 @@ type LngLatPair = [number, number]
  * Respects prefers-reduced-motion: no continuous camera, instant cuts.
  */
 export default function FlyoverScreen() {
-  const { current, goto } = useApp()
+  const { current, goto, unit } = useApp()
   // Placeholder keeps hook order stable; we bail out after the hooks run.
   const walk = current ?? EMPTY_WALK
   const tl = useMemo<Timeline>(() => buildTimeline(walk), [walk])
@@ -274,7 +275,7 @@ export default function FlyoverScreen() {
           </span>
           <h1>{walk.title}</h1>
           <p>
-            {walk.distanceKm} km · {walk.estMinutes} min · {walk.stops.length} stops
+            {formatDistance(walk.distanceKm, unit)} · {walk.estMinutes} min · {walk.stops.length} stops
           </p>
         </div>
       )}

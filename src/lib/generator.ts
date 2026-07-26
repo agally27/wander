@@ -1,6 +1,6 @@
-import type { Walk, Pace, Place, Stop, StopCategory, LngLat, VibeId } from './types'
+import type { Walk, Pace, Place, Stop, StopCategory, LngLat, VibeId, WalkShape } from './types'
 import { cumulativeKm, haversineKm, pointAtDistance, seeded, snapToPolyline } from './geo'
-import { fetchWalkRoute, loopWaypoints, type RawRoute } from './api/routing'
+import { fetchWalkRoute, loopWaypoints, outAndBackWaypoints, type RawRoute } from './api/routing'
 import { findCandidates, type Candidate } from './api/discoveries'
 import { contentFor, pick, walkIntro, walkTitle, teaserFor } from './content'
 import { GROUP_OF, VIBE_AFFINITY, type VarietyGroup } from './vibes'
@@ -30,6 +30,7 @@ export interface GenerateParams {
   vibe: VibeId
   durationMin: number
   pace: Pace
+  shape: WalkShape
   start: Place
 }
 
@@ -37,7 +38,7 @@ export async function generateWalk(
   params: GenerateParams,
   onProgress: (p: GenProgress) => void,
 ): Promise<Walk> {
-  const { vibe, durationMin, pace, start } = params
+  const { vibe, durationMin, pace, shape, start } = params
   const rng = seeded(`${start.coord.join(',')}|${vibe}|${Date.now() >> 16}`)
 
   onProgress('sizing')
@@ -45,11 +46,21 @@ export async function generateWalk(
   const targetCount = durationMin <= 30 ? 4 : durationMin <= 60 ? 5 : 6
   const walkMin = Math.max(12, durationMin - targetCount * STOP_MIN)
   const targetKm = (speed * walkMin) / 60
+  // an out-and-back covers the same ground twice, so the outbound reach
+  // should aim for half the total distance the user asked for
+  const oneWayKm = shape === 'outAndBack' ? targetKm / 2 : targetKm
 
   onProgress('mapping')
   const baseHeading = Math.floor(rng() * 360)
   const scoutResults = await Promise.allSettled(
-    [0, 120, 240].map((off) => fetchWalkRoute(loopWaypoints(start.coord, targetKm, baseHeading + off), speed)),
+    [0, 120, 240].map((off) =>
+      fetchWalkRoute(
+        shape === 'outAndBack'
+          ? outAndBackWaypoints(start.coord, oneWayKm, baseHeading + off)
+          : loopWaypoints(start.coord, targetKm, baseHeading + off),
+        speed,
+      ),
+    ),
   )
   const scouts = scoutResults
     .filter((r): r is PromiseFulfilledResult<RawRoute> => r.status === 'fulfilled')
@@ -84,15 +95,31 @@ export async function generateWalk(
   let timeMin = scout.timeMin
   if (chosen.some((c) => c.fromMap)) {
     try {
-      const final = await fetchWalkRoute([start.coord, ...chosen.map((c) => c.coord), start.coord], speed)
+      // Loop: through every pick and back to the start. Out-and-back: through
+      // the picks only — that's the outbound leg; the return is mirrored
+      // below rather than routed again, so it's guaranteed identical.
+      const waypoints =
+        shape === 'outAndBack'
+          ? [start.coord, ...chosen.map((c) => c.coord)]
+          : [start.coord, ...chosen.map((c) => c.coord), start.coord]
+      const final = await fetchWalkRoute(waypoints, speed)
       coords = final.coords
       distanceKm = final.distanceKm
       timeMin = final.timeMin
     } catch (e) {
-      // Keep the scout loop. Snapping below still pins every stop onto it,
+      // Keep the scout route. Snapping below still pins every stop onto it,
       // so markers can never end up floating off the drawn route.
-      console.warn('[wander] Could not re-route through the picks — keeping the scout loop', e)
+      console.warn('[wander] Could not re-route through the picks — keeping the scout route', e)
     }
+  }
+
+  if (shape === 'outAndBack') {
+    // Mirror the outbound leg back to the start rather than asking the
+    // router for a second, independent path — the return is then
+    // geometrically guaranteed to retrace the outbound line exactly.
+    coords = [...coords, ...coords.slice(0, -1).reverse()]
+    distanceKm *= 2
+    timeMin *= 2
   }
 
   // Pin every stop onto the route we actually drew.
@@ -153,6 +180,7 @@ export async function generateWalk(
     title: walkTitle(vibe, rng),
     vibe,
     pace,
+    shape,
     requestedMin: durationMin,
     estMinutes: Math.round(timeMin + stops.length * STOP_MIN),
     distanceKm: Math.round(distanceKm * 10) / 10,
@@ -174,6 +202,8 @@ export async function generateWalk(
  * get pulled back onto their own route line.
  */
 export function reconcileWalk(walk: Walk): Walk {
+  // `shape` postdates this field too — every walk before it existed was a loop.
+  if (!walk.shape) walk = { ...walk, shape: 'loop' }
   if (!walk.coords?.length || !walk.stops?.length) return walk
   const cum = cumulativeKm(walk.coords)
   const speed = SPEED_KMH[walk.pace]

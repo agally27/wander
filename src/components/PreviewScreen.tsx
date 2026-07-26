@@ -1,10 +1,11 @@
 import { useApp } from '../store'
 import { vibeMeta } from '../lib/vibes'
-import { Btn, Header, CatIcon, catLabel } from './ui'
+import { formatDistance } from '../lib/units'
+import { Btn, Header, CatIcon, catLabel, UnitToggle } from './ui'
 import MapCanvas from './MapCanvas'
 
 export default function PreviewScreen() {
-  const { current, goto, startWalk, editCurrent, deleteWalk } = useApp()
+  const { current, goto, startWalk, editCurrent, deleteWalk, unit } = useApp()
   if (!current) return null
   const v = vibeMeta(current.vibe)
   const realStops = current.stops.filter((s) => s.placeName).length
@@ -24,8 +25,10 @@ export default function PreviewScreen() {
         <h1 className="preview__title">{current.title}</h1>
         <div className="preview__meta">
           <span>⏱ {current.estMinutes} min</span>
-          <span>📏 {current.distanceKm} km</span>
+          <span>📏 {formatDistance(current.distanceKm, unit)}</span>
           <span>📍 {current.stops.length} stops</span>
+          <span>{current.shape === 'outAndBack' ? '↔️ There & back' : '🔁 Loop'}</span>
+          <UnitToggle sm />
         </div>
         <p className="preview__intro">{current.intro}</p>
         {realStops > 0 && (

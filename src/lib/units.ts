@@ -1,0 +1,24 @@
+export type Unit = 'mi' | 'km'
+
+const KM_TO_MI = 0.621371
+
+/** All distances are stored in km internally; this only affects display. */
+export function convertKm(km: number, unit: Unit): number {
+  return unit === 'mi' ? km * KM_TO_MI : km
+}
+
+/** e.g. "2.4 mi" / "3.9 km" — one decimal place, the unit spelled out short. */
+export function formatDistance(km: number, unit: Unit): string {
+  const v = convertKm(km, unit)
+  const rounded = Math.round(v * 10) / 10
+  return `${rounded} ${unit}`
+}
+
+/** Just the number, for stat tiles that show the unit as a separate label. */
+export function formatDistanceValue(km: number, unit: Unit): number {
+  return Math.round(convertKm(km, unit) * 10) / 10
+}
+
+export function unitLabel(unit: Unit): string {
+  return unit === 'mi' ? 'miles' : 'km'
+}

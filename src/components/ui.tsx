@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { CONTENT } from '../lib/content'
 import type { StopCategory } from '../lib/types'
+import { useApp } from '../store'
 
 export function Btn(props: {
   children: ReactNode
@@ -61,4 +62,20 @@ export function CatIcon(props: { category: StopCategory; size?: number }) {
 
 export function catLabel(category: StopCategory): string {
   return (CONTENT[category] ?? CONTENT.wander).label
+}
+
+/** mi / km segmented toggle — reads and writes the one global preference. */
+export function UnitToggle(props: { sm?: boolean }) {
+  const unit = useApp((s) => s.unit)
+  const setUnit = useApp((s) => s.setUnit)
+  return (
+    <div className={'unit-toggle' + (props.sm ? ' unit-toggle--sm' : '')}>
+      <button className={unit === 'mi' ? 'is-on' : ''} onClick={() => setUnit('mi')}>
+        mi
+      </button>
+      <button className={unit === 'km' ? 'is-on' : ''} onClick={() => setUnit('km')}>
+        km
+      </button>
+    </div>
+  )
 }

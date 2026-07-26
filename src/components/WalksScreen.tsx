@@ -1,12 +1,13 @@
 import { useApp } from '../store'
 import { vibeMeta } from '../lib/vibes'
-import { Header } from './ui'
+import { formatDistance } from '../lib/units'
+import { Header, UnitToggle } from './ui'
 
 export default function WalksScreen() {
-  const { walks, openWalk, goto } = useApp()
+  const { walks, openWalk, goto, unit } = useApp()
   return (
     <div className="screen walks">
-      <Header title="Your walks" onBack={() => goto('home')} />
+      <Header title="Your walks" onBack={() => goto('home')} right={<UnitToggle sm />} />
       {walks.length === 0 ? (
         <div className="empty">
           <div className="empty__mark">◈</div>
@@ -23,7 +24,7 @@ export default function WalksScreen() {
                 <div className="walk-card__body">
                   <div className="walk-card__title">{w.title}</div>
                   <div className="walk-card__sub">
-                    {v.name} · {w.distanceKm} km · {w.stops.length} stops
+                    {v.name} · {formatDistance(w.distanceKm, unit)} · {w.stops.length} stops
                   </div>
                 </div>
                 <span className={'walk-card__state walk-card__state--' + w.state}>
