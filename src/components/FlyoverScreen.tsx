@@ -8,7 +8,7 @@ import { buildTimeline, routeSliceTo, sceneIndexOfStop, CAM, type Timeline } fro
 import { findPlaceImage, type PlaceImage } from '../lib/api/imagery'
 import { vibeMeta } from '../lib/vibes'
 import { formatDistance } from '../lib/units'
-import { CatIcon, catLabel } from './ui'
+import { Btn, CatIcon, catLabel } from './ui'
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] } as any
 const SPEEDS = [0.5, 1, 1.5, 2]
@@ -52,6 +52,8 @@ export default function FlyoverScreen() {
   const [playing, setPlaying] = useState(true)
   const [ready, setReady] = useState(false)
   const [speed, setSpeed] = useState(1)
+  const [broken, setBroken] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
   const sceneIdxRef = useRef(0)
   const playingRef = useRef(true)
   const speedRef = useRef(1)
@@ -66,6 +68,7 @@ export default function FlyoverScreen() {
   // ── map setup ───────────────────────────────────────────
   useEffect(() => {
     if (!el.current) return
+    setReady(false)
     const m = new maplibregl.Map({
       container: el.current,
       style: buildPaperStyle(),
@@ -87,34 +90,78 @@ export default function FlyoverScreen() {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#D98A3D', 'line-width': 5, 'line-dasharray': [0.1, 1.7] },
       })
-      // extruded buildings give the pitched camera something to fly past
-      if (m.getLayer('buildings-3d')) m.setLayoutProperty('buildings-3d', 'visibility', 'visible')
       // Real 3D terrain — hills and any real elevation actually rise and
       // fall under the camera instead of the walk playing out on a flat
       // plane. Free, keyless AWS elevation tiles (see mapStyle.ts); modest
       // exaggeration since this covers ordinary local walks as often as
       // hilly ones, not just dramatic mountain scenery.
-      if (m.getSource('terrain-dem')) m.setTerrain({ source: 'terrain-dem', exaggeration: 1.4 })
-      m.setSky({
-        'sky-color': '#cfe3ea',
-        'horizon-color': '#f1ead9',
-        'fog-color': '#f1ead9',
-        'fog-ground-blend': 0.5,
-        'horizon-fog-blend': 0.6,
-        'sky-horizon-blend': 0.6,
-        'atmosphere-blend': 0.6,
-      })
+      let terrainOn = false
+      try {
+        if (m.getSource('terrain-dem')) {
+          m.setTerrain({ source: 'terrain-dem', exaggeration: 1.4 })
+          terrainOn = true
+        }
+        m.setSky({
+          'sky-color': '#cfe3ea',
+          'horizon-color': '#f1ead9',
+          'fog-color': '#f1ead9',
+          'fog-ground-blend': 0.5,
+          'horizon-fog-blend': 0.6,
+          'sky-horizon-blend': 0.6,
+          'atmosphere-blend': 0.6,
+        })
+      } catch (e) {
+        console.warn('[wander] Terrain/sky setup failed — continuing flat', e)
+      }
+      // Extruded buildings and terrain displacement are two separate 3D
+      // systems; running both on a pitched camera roughly doubles the
+      // rendering complexity, and that combination — worse on a
+      // memory-constrained device — is the likeliest thing behind the
+      // WebGL context outright dying mid fly-over. Terrain alone already
+      // gives a pitched camera plenty to look at, so buildings only get
+      // extruded when terrain ISN'T active (ordinary flat urban walks).
+      if (!terrainOn && m.getLayer('buildings-3d')) {
+        m.setLayoutProperty('buildings-3d', 'visibility', 'visible')
+      }
       setReady(true)
     })
+    // Cheap defence-in-depth: an individual failed DEM tile is already
+    // handled internally (that tile just renders blank, nothing crashes),
+    // so this mostly covers a bad terrain/style config rather than routine
+    // network flakiness — but costs nothing to have, and drops terrain
+    // instead of leaving it half-broken on the rare error that does
+    // surface here.
+    m.on('error', (e: any) => {
+      const msg = String(e?.error?.message ?? e?.error ?? '').toLowerCase()
+      if (e?.sourceId === 'terrain-dem' || msg.includes('terrain') || msg.includes('dem')) {
+        console.warn('[wander] Terrain tile error — disabling terrain for this session', e)
+        try {
+          m.setTerrain(null)
+        } catch {
+          /* already gone */
+        }
+      }
+    })
+    // Last-resort safety net: if the GPU context itself is lost (memory
+    // pressure, driver issue), MapLibre has nothing to recover with on its
+    // own — surface a retry instead of leaving a silent black screen.
+    const canvas = m.getCanvas()
+    const onContextLost = (ev: Event) => {
+      ev.preventDefault()
+      console.warn('[wander] WebGL context lost during fly-over')
+      setBroken(true)
+    }
+    canvas.addEventListener('webglcontextlost', onContextLost, false)
     map.current = m
     return () => {
+      canvas.removeEventListener('webglcontextlost', onContextLost, false)
       cancelAnimationFrame(raf.current)
       markers.current.forEach((mk) => mk.remove())
       m.remove()
       map.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [retryKey])
 
   // stop markers — plain anchors, no transforms (MapLibre owns those)
   useEffect(() => {
@@ -135,7 +182,7 @@ export default function FlyoverScreen() {
   // ── the performance ─────────────────────────────────────
   useEffect(() => {
     const m = map.current
-    if (!m || !ready) return
+    if (!m || !ready || broken) return
     cancelAnimationFrame(raf.current)
     const sc = tl.scenes[sceneIdx]
     if (!sc) return
@@ -249,7 +296,14 @@ export default function FlyoverScreen() {
     raf.current = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(raf.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIdx, ready, playing])
+  }, [sceneIdx, ready, playing, broken])
+
+  const retryFlyover = () => {
+    setBroken(false)
+    setSceneIdx(0)
+    setPlaying(true)
+    setRetryKey((k) => k + 1)
+  }
 
   const jumpToStop = (i: number) => {
     const idx = sceneIndexOfStop(tl, i)
@@ -274,6 +328,18 @@ export default function FlyoverScreen() {
       <button className="flyover__exit" onClick={() => goto('preview')} aria-label="Exit fly-over">
         ✕
       </button>
+
+      {broken && (
+        <div className="flyover__broken">
+          <div className="flyover__broken-card">
+            <div className="flyover__broken-icon">📡</div>
+            <h2>Lost the map preview</h2>
+            <p>This can happen on a weak connection — the 3D terrain needs its own data on top of the map itself.</p>
+            <Btn wide onClick={retryFlyover}>Try again</Btn>
+            <Btn kind="ghost" wide onClick={() => goto('preview')}>Back to the walk</Btn>
+          </div>
+        </div>
+      )}
 
       <div className="flyover__speed">
         {SPEEDS.map((s) => (
