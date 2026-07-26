@@ -183,9 +183,15 @@ function LocationStep({ onNext }: { onNext: () => void }) {
   )
 }
 
+function durationLabel(d: number): string {
+  if (d < 60) return `${d} min`
+  const hrs = d / 60
+  return `${hrs % 1 === 0 ? hrs : hrs.toFixed(1)} hr`
+}
+
 function LengthStep({ onGenerate }: { onGenerate: () => void }) {
   const { draft, setDraft, unit } = useApp()
-  const durations = [30, 45, 60, 90]
+  const durations = [30, 45, 60, 90, 120, 180]
   return (
     <div className="step">
       <p className="step__lead">How long a walk?</p>
@@ -196,7 +202,7 @@ function LengthStep({ onGenerate }: { onGenerate: () => void }) {
             className={'chip' + (draft.durationMin === d ? ' is-sel' : '')}
             onClick={() => setDraft({ durationMin: d })}
           >
-            {d < 60 ? `${d} min` : `${d / 60} hr${d > 60 ? '+' : ''}`}
+            {durationLabel(d)}
           </button>
         ))}
       </div>

@@ -58,7 +58,8 @@ export async function generateWalk(
 
   onProgress('sizing')
   const speed = SPEED_KMH[pace]
-  const targetCount = durationMin <= 30 ? 4 : durationMin <= 60 ? 5 : 6
+  const targetCount =
+    durationMin <= 30 ? 4 : durationMin <= 60 ? 5 : durationMin <= 90 ? 6 : durationMin <= 135 ? 8 : 10
   const walkMin = Math.max(12, durationMin - targetCount * STOP_MIN)
   const targetKm = (speed * walkMin) / 60
   // an out-and-back covers the same ground twice, so the outbound reach
