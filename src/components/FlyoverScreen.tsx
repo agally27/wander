@@ -89,6 +89,21 @@ export default function FlyoverScreen() {
       })
       // extruded buildings give the pitched camera something to fly past
       if (m.getLayer('buildings-3d')) m.setLayoutProperty('buildings-3d', 'visibility', 'visible')
+      // Real 3D terrain — hills and any real elevation actually rise and
+      // fall under the camera instead of the walk playing out on a flat
+      // plane. Free, keyless AWS elevation tiles (see mapStyle.ts); modest
+      // exaggeration since this covers ordinary local walks as often as
+      // hilly ones, not just dramatic mountain scenery.
+      if (m.getSource('terrain-dem')) m.setTerrain({ source: 'terrain-dem', exaggeration: 1.4 })
+      m.setSky({
+        'sky-color': '#cfe3ea',
+        'horizon-color': '#f1ead9',
+        'fog-color': '#f1ead9',
+        'fog-ground-blend': 0.5,
+        'horizon-fog-blend': 0.6,
+        'sky-horizon-blend': 0.6,
+        'atmosphere-blend': 0.6,
+      })
       setReady(true)
     })
     map.current = m

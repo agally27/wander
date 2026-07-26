@@ -1,6 +1,6 @@
 import { useApp } from '../store'
 import { vibeMeta } from '../lib/vibes'
-import { formatDistanceValue } from '../lib/units'
+import { formatDistanceValue, formatElevation } from '../lib/units'
 import { Btn, CatIcon } from './ui'
 
 export default function DoneScreen() {
@@ -22,6 +22,9 @@ export default function DoneScreen() {
         <div className="stat"><span className="stat__n">{formatDistanceValue(current.distanceKm, unit)}</span><span className="stat__l">{unit}</span></div>
         <div className="stat"><span className="stat__n">{visited}</span><span className="stat__l">stops</span></div>
         <div className="stat"><span className="stat__n">{current.estMinutes}</span><span className="stat__l">min</span></div>
+        {!!current.elevationGainM && current.elevationGainM > 15 && (
+          <div className="stat"><span className="stat__n">{formatElevation(current.elevationGainM, unit)}</span><span className="stat__l">ascent</span></div>
+        )}
       </div>
 
       {savedThisWalk.length > 0 && (

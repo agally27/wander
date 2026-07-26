@@ -2,6 +2,7 @@ import type { Walk, Pace, Place, Stop, StopCategory, LngLat, VibeId, WalkShape }
 import { bearingDeg, cumulativeKm, haversineKm, pointAtDistance, seeded, snapToPolyline } from './geo'
 import { fetchWalkRoute, loopWaypoints, outAndBackWaypoints, type RawRoute } from './api/routing'
 import { findCandidates, type Candidate } from './api/discoveries'
+import { fetchElevationProfile, gainLoss } from './api/elevation'
 import { contentFor, pick, walkIntro, walkTitle, teaserFor } from './content'
 import { GROUP_OF, VIBE_AFFINITY, type VarietyGroup } from './vibes'
 
@@ -185,6 +186,19 @@ export async function generateWalk(
   // route. Projecting each stop onto the final polyline guarantees its
   // marker sits ON the walk, and gives us its true distance along the route.
   const cum = cumulativeKm(coords)
+
+  // Best-effort elevation gain/loss — genuinely useful for anything on a
+  // hill (a "flat" claim is worth checking too). Never blocks the walk.
+  let elevationGainM: number | undefined
+  let elevationLossM: number | undefined
+  try {
+    const profile = await fetchElevationProfile(coords, cum)
+    const gl = gainLoss(profile)
+    elevationGainM = gl.gainM
+    elevationLossM = gl.lossM
+  } catch (e) {
+    console.warn('[wander] Could not fetch elevation profile', e)
+  }
   const placed = chosen
     .map((c) => {
       const snapped = snapToPolyline(coords, cum, c.coord)
@@ -247,6 +261,8 @@ export async function generateWalk(
     requestedMin: durationMin,
     estMinutes: Math.round(timeMin + stops.length * STOP_MIN),
     distanceKm: Math.round(distanceKm * 10) / 10,
+    elevationGainM,
+    elevationLossM,
     intro: walkIntro(vibe, stops.length),
     start,
     coords,

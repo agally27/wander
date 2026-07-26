@@ -18,6 +18,13 @@ import type { StyleSpecification } from 'maplibre-gl'
 
 const TILES = 'https://tiles.openfreemap.org/planet'
 const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
+// AWS's public Terrarium elevation tiles — free, keyless, part of the AWS
+// Open Data Registry (originally Mapzen's terrain tile set). MapLibre reads
+// this RGB-encoded format natively via `encoding: 'terrarium'`. The source
+// is declared here so it's available wherever this style loads, but actual
+// 3D displacement is opt-in per map via `map.setTerrain(...)` — see
+// FlyoverScreen, which is the only place that turns it on.
+const TERRAIN_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
 
 // palette — warm paper, muted naturals, near-white roads
 const BG = '#F2EDE2'
@@ -46,6 +53,14 @@ export function buildPaperStyle(): StyleSpecification {
     glyphs: GLYPHS,
     sources: {
       omt: { type: 'vector', url: TILES },
+      'terrain-dem': {
+        type: 'raster-dem',
+        tiles: [TERRAIN_TILES],
+        tileSize: 256,
+        encoding: 'terrarium',
+        maxzoom: 15,
+        attribution: 'Terrain: AWS Terrain Tiles',
+      },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': BG } },

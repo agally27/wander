@@ -22,3 +22,13 @@ export function formatDistanceValue(km: number, unit: Unit): number {
 export function unitLabel(unit: Unit): string {
   return unit === 'mi' ? 'miles' : 'km'
 }
+
+const M_TO_FT = 3.28084
+
+/** Elevation follows the same mi/km preference — feet alongside miles,
+ *  metres alongside km, matching how hill heights are conventionally quoted
+ *  in each system. e.g. "410 ft" / "125 m". */
+export function formatElevation(m: number, unit: Unit): string {
+  const v = unit === 'mi' ? m * M_TO_FT : m
+  return `${Math.round(v)} ${unit === 'mi' ? 'ft' : 'm'}`
+}

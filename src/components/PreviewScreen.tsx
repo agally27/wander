@@ -1,6 +1,6 @@
 import { useApp } from '../store'
 import { vibeMeta } from '../lib/vibes'
-import { formatDistance } from '../lib/units'
+import { formatDistance, formatElevation } from '../lib/units'
 import { Btn, Header, CatIcon, catLabel, UnitToggle } from './ui'
 import MapCanvas from './MapCanvas'
 
@@ -28,6 +28,9 @@ export default function PreviewScreen() {
           <span>📏 {formatDistance(current.distanceKm, unit)}</span>
           <span>📍 {current.stops.length} stops</span>
           <span>{current.shape === 'outAndBack' ? '↔️ There & back' : '🔁 Loop'}</span>
+          {!!current.elevationGainM && current.elevationGainM > 15 && (
+            <span>⛰ {formatElevation(current.elevationGainM, unit)} ascent</span>
+          )}
           <UnitToggle sm />
         </div>
         <p className="preview__intro">{current.intro}</p>

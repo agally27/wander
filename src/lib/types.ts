@@ -99,6 +99,9 @@ export interface Walk {
   requestedMin: number
   estMinutes: number
   distanceKm: number
+  /** best-effort — absent if the elevation lookup failed or hasn't run (older walks) */
+  elevationGainM?: number
+  elevationLossM?: number
   intro: string
   start: Place
   /** full walking line: start → stops → back to start (loop), or
