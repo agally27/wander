@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { useApp } from '../store'
 import { buildPaperStyle } from '../lib/mapStyle'
 import { bboxOf, bearingDeg, pointAtDistance } from '../lib/geo'
-import { buildTimeline, routeSliceTo, sceneIndexOfStop, CAM, type Timeline } from '../lib/cinematic'
+import { buildTimeline, routeSliceTo, sceneIndexOfStop, camFor, type Timeline } from '../lib/cinematic'
 import { findPlaceImage, type PlaceImage } from '../lib/api/imagery'
 import { vibeMeta } from '../lib/vibes'
 import { formatDistance } from '../lib/units'
@@ -41,6 +41,8 @@ export default function FlyoverScreen() {
   // Placeholder keeps hook order stable; we bail out after the hooks run.
   const walk = current ?? EMPTY_WALK
   const tl = useMemo<Timeline>(() => buildTimeline(walk), [walk])
+  // Framing depends on how hilly the walk is — see camFor().
+  const CAM = useMemo(() => camFor(walk), [walk])
 
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<MLMap | null>(null)
@@ -90,38 +92,30 @@ export default function FlyoverScreen() {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#D98A3D', 'line-width': 5, 'line-dasharray': [0.1, 1.7] },
       })
-      // Real 3D terrain — hills and any real elevation actually rise and
-      // fall under the camera instead of the walk playing out on a flat
-      // plane. Free, keyless AWS elevation tiles (see mapStyle.ts); modest
-      // exaggeration since this covers ordinary local walks as often as
-      // hilly ones, not just dramatic mountain scenery.
-      let terrainOn = false
+      // Extruded buildings — the 3D interest on a town walk, and what makes
+      // a pitched camera worth pitching in a built-up area.
+      if (m.getLayer('buildings-3d')) m.setLayoutProperty('buildings-3d', 'visibility', 'visible')
+      // Real 3D terrain, but only where there's actually terrain worth
+      // showing (see camFor). Free, keyless AWS elevation tiles — see
+      // mapStyle.ts. On a flat town walk this stays off: it would displace
+      // every marker onto the elevation surface and switch on occlusion
+      // testing for no visible gain, which is what knocked the numbered
+      // stops out of alignment with their own trail line.
       try {
-        if (m.getSource('terrain-dem')) {
-          m.setTerrain({ source: 'terrain-dem', exaggeration: 1.4 })
-          terrainOn = true
+        if (CAM.terrain && m.getSource('terrain-dem')) {
+          m.setTerrain({ source: 'terrain-dem', exaggeration: CAM.exaggeration })
+          m.setSky({
+            'sky-color': '#cfe3ea',
+            'horizon-color': '#f1ead9',
+            'fog-color': '#f1ead9',
+            'fog-ground-blend': 0.5,
+            'horizon-fog-blend': 0.6,
+            'sky-horizon-blend': 0.6,
+            'atmosphere-blend': 0.6,
+          })
         }
-        m.setSky({
-          'sky-color': '#cfe3ea',
-          'horizon-color': '#f1ead9',
-          'fog-color': '#f1ead9',
-          'fog-ground-blend': 0.5,
-          'horizon-fog-blend': 0.6,
-          'sky-horizon-blend': 0.6,
-          'atmosphere-blend': 0.6,
-        })
       } catch (e) {
         console.warn('[wander] Terrain/sky setup failed — continuing flat', e)
-      }
-      // Extruded buildings and terrain displacement are two separate 3D
-      // systems; running both on a pitched camera roughly doubles the
-      // rendering complexity, and that combination — worse on a
-      // memory-constrained device — is the likeliest thing behind the
-      // WebGL context outright dying mid fly-over. Terrain alone already
-      // gives a pitched camera plenty to look at, so buildings only get
-      // extruded when terrain ISN'T active (ordinary flat urban walks).
-      if (!terrainOn && m.getLayer('buildings-3d')) {
-        m.setLayoutProperty('buildings-3d', 'visibility', 'visible')
       }
       setReady(true)
     })
@@ -161,7 +155,7 @@ export default function FlyoverScreen() {
       map.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retryKey])
+  }, [retryKey, CAM])
 
   // stop markers — plain anchors, no transforms (MapLibre owns those)
   useEffect(() => {
@@ -296,7 +290,7 @@ export default function FlyoverScreen() {
     raf.current = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(raf.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIdx, ready, playing, broken])
+  }, [sceneIdx, ready, playing, broken, CAM])
 
   const retryFlyover = () => {
     setBroken(false)

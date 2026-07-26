@@ -54,6 +54,55 @@ export const CAM = {
   bearingEase: 0.045,
 }
 
+export type CamProfile = typeof CAM & { terrain: boolean; exaggeration: number }
+
+/**
+ * A walk needs this much total ascent before 3D terrain earns its place.
+ * Below it there's nothing to see — an ordinary town walk is essentially
+ * flat at any believable exaggeration — and terrain isn't free: it shifts
+ * every DOM marker onto the elevation surface and enables occlusion testing
+ * (markers behind a rise get faded out), which on flat ground only makes
+ * the numbered stops drift and blink against their own trail line.
+ */
+const HILLY_GAIN_M = 80
+
+/**
+ * Camera framing for this walk.
+ *
+ * MapLibre re-derives `transform.elevation` from the terrain under the
+ * CENTRE point every frame, and the camera then sits a fixed height above
+ * that — a height set by zoom and pitch. At the flat-walk framing
+ * (zoom 16.6 / pitch 58) that height works out around 300 m. Fine over a
+ * town; useless on a real hill, where ground ahead of the camera can rise
+ * several hundred metres more than the point being centred on, so the
+ * camera ends up *inside* the hillside and renders its underside — the
+ * "zoomed in too far, just polygons" failure, and the likeliest cause of
+ * the black screen before it.
+ *
+ * So a hilly walk pulls the camera back and lifts it (lower zoom, less
+ * pitch — altitude scales with cos(pitch)), landing near 1 km up: above
+ * the relief, looking down at the mountain rather than into it. Terrain
+ * exaggeration also drops to 1.0, since real hills need no help and every
+ * extra multiple is more rise for the camera to collide with.
+ */
+export function camFor(walk: Walk): CamProfile {
+  const gain = walk.elevationGainM ?? 0
+  if (gain < HILLY_GAIN_M) {
+    // Flat/urban: unchanged framing, no terrain — so extruded buildings are
+    // the 3D interest, and markers sit exactly on the trail line.
+    return { ...CAM, terrain: false, exaggeration: 1 }
+  }
+  return {
+    ...CAM,
+    travelPitch: 52,
+    travelZoom: 15,
+    stopPitch: 45,
+    stopZoom: 15.8,
+    terrain: true,
+    exaggeration: 1,
+  }
+}
+
 const INTRO_MS = 3000
 const LAUNCH_MS = 1900
 const STOP_MS = 4000
