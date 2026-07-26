@@ -165,6 +165,38 @@ export async function generateWalk(
   }
 }
 
+/**
+ * Repairs a Walk's stop placement after the fact — self-healing for walks
+ * saved before stop-snapping existed (or any other drift between a stop's
+ * coordinate and the route it sits on). Cheap pure geometry, safe to run on
+ * every load: falls back from `placeCoord` (the true, un-snapped place) to
+ * `coord` when a walk predates that field, so even the oldest saved walks
+ * get pulled back onto their own route line.
+ */
+export function reconcileWalk(walk: Walk): Walk {
+  if (!walk.coords?.length || !walk.stops?.length) return walk
+  const cum = cumulativeKm(walk.coords)
+  const speed = SPEED_KMH[walk.pace]
+
+  const placed = walk.stops
+    .map((s) => {
+      const raw = s.placeCoord ?? s.coord
+      const snapped = snapToPolyline(walk.coords, cum, raw)
+      return { s, coord: snapped.coord, alongKm: snapped.alongKm }
+    })
+    .sort((a, b) => a.alongKm - b.alongKm)
+
+  let prevKm = 0
+  let etaMin = 0
+  const stops = placed.map(({ s, coord, alongKm }, i) => {
+    const distFromPrevKm = Math.max(0, alongKm - prevKm)
+    etaMin += (distFromPrevKm / speed) * 60 + (i === 0 ? 0 : STOP_MIN)
+    prevKm = alongKm
+    return { ...s, coord, order: i + 1, distFromPrevKm, etaMin: Math.round(etaMin) }
+  })
+  return { ...walk, stops }
+}
+
 interface Chosen {
   coord: LngLat
   name?: string

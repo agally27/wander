@@ -97,6 +97,27 @@ function LocationStep({ onNext }: { onNext: () => void }) {
     )
   }
 
+  // Open the picker already centred on the user, instead of a fixed
+  // fallback point — same lookup as "Use my location", just automatic and
+  // silent (the browser still shows its own permission prompt). Skipped
+  // entirely if a start is already set (e.g. editing an existing walk), and
+  // never overwrites a choice the user made while the lookup was pending.
+  useEffect(() => {
+    if (draft.start || !('geolocation' in navigator)) return
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        if (useApp.getState().draft.start) return
+        const coord: LngLat = [pos.coords.longitude, pos.coords.latitude]
+        const name = await reverseGeocode(coord)
+        if (useApp.getState().draft.start) return
+        setDraft({ start: { name, detail: 'Your location', coord } })
+      },
+      () => {}, // denied/unavailable — falls back to the default map view
+      { enableHighAccuracy: true, timeout: 8000 },
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const pickOnMap = async (coord: LngLat) => {
     const name = await reverseGeocode(coord)
     setDraft({ start: { name, detail: 'Dropped pin', coord } })

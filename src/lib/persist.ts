@@ -1,4 +1,5 @@
 import type { FieldNote, Stats, Walk } from './types'
+import { reconcileWalk } from './generator'
 
 const WALKS_KEY = 'wander.walks.v1'
 const NOTES_KEY = 'wander.fieldnotes.v1'
@@ -8,7 +9,10 @@ export const emptyStats = (): Stats => ({ walksCompleted: 0, stopsVisited: 0, km
 
 export function loadWalks(): Walk[] {
   try {
-    return JSON.parse(localStorage.getItem(WALKS_KEY) ?? '[]')
+    const raw: Walk[] = JSON.parse(localStorage.getItem(WALKS_KEY) ?? '[]')
+    // Re-pin every stop onto its route on load — self-heals any walk saved
+    // before stop-snapping existed, so old dots never drift off the line.
+    return raw.map(reconcileWalk)
   } catch {
     return []
   }

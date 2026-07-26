@@ -10,6 +10,7 @@ import { vibeMeta } from '../lib/vibes'
 import { CatIcon, catLabel } from './ui'
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] } as any
+const SPEEDS = [0.5, 1, 1.5, 2]
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -49,10 +50,13 @@ export default function FlyoverScreen() {
   const [sceneIdx, setSceneIdx] = useState(0)
   const [playing, setPlaying] = useState(true)
   const [ready, setReady] = useState(false)
+  const [speed, setSpeed] = useState(1)
   const sceneIdxRef = useRef(0)
   const playingRef = useRef(true)
+  const speedRef = useRef(1)
   sceneIdxRef.current = sceneIdx
   playingRef.current = playing
+  speedRef.current = speed
 
   const scene = tl.scenes[sceneIdx]
   const activeStop = scene?.kind === 'stop' ? walk.stops[scene.stopIndex!] : null
@@ -144,7 +148,7 @@ export default function FlyoverScreen() {
         m.jumpTo({ center: at, zoom: CAM.stopZoom - 1, pitch: 0, bearing: 0 })
       }
       if (!playingRef.current) return
-      const t = window.setTimeout(advance, Math.min(1600, sc.durationMs))
+      const t = window.setTimeout(advance, Math.min(1600, sc.durationMs) / speedRef.current)
       return () => window.clearTimeout(t)
     }
 
@@ -154,7 +158,7 @@ export default function FlyoverScreen() {
     if (sc.kind === 'intro') {
       const [sw, ne] = bboxOf(walk.coords)
       m.fitBounds([sw, ne], { padding: 56, pitch: 0, bearing: 0, duration: 1200 })
-      const t = window.setTimeout(advance, sc.durationMs)
+      const t = window.setTimeout(advance, sc.durationMs / speedRef.current)
       return () => window.clearTimeout(t)
     }
 
@@ -169,7 +173,7 @@ export default function FlyoverScreen() {
         duration: sc.durationMs * 0.9,
       })
       trail(0)
-      const t = window.setTimeout(advance, sc.durationMs)
+      const t = window.setTimeout(advance, sc.durationMs / speedRef.current)
       return () => window.clearTimeout(t)
     }
 
@@ -182,7 +186,7 @@ export default function FlyoverScreen() {
         duration: 900,
       })
       trail(sc.toKm)
-      const t = window.setTimeout(advance, sc.durationMs)
+      const t = window.setTimeout(advance, sc.durationMs / speedRef.current)
       return () => window.clearTimeout(t)
     }
 
@@ -192,11 +196,14 @@ export default function FlyoverScreen() {
       trail(tl.totalKm)
       m.easeTo({ pitch: 0, bearing: 0, duration: 700 })
       m.fitBounds([sw, ne], { padding: 56, duration: 1800 })
-      const t = window.setTimeout(advance, sc.durationMs)
+      const t = window.setTimeout(advance, sc.durationMs / speedRef.current)
       return () => window.clearTimeout(t)
     }
 
     // ---- travel: km-paced glide with smoothed look-ahead bearing ----
+    // speedRef is read fresh every frame (not baked into kmPerMs), so
+    // dragging the speed control mid-glide takes effect immediately instead
+    // of only on the next scene — same live-adjustable pattern as Elecride.
     const span = Math.max(0.001, sc.toKm - sc.fromKm)
     const kmPerMs = span / sc.durationMs
     let travelled = sc.fromKm
@@ -207,7 +214,7 @@ export default function FlyoverScreen() {
       if (last === null) last = t
       const dt = Math.min(80, t - last) // clamp tab-switch jumps
       last = t
-      travelled = Math.min(sc.toKm, travelled + dt * kmPerMs)
+      travelled = Math.min(sc.toKm, travelled + dt * kmPerMs * speedRef.current)
       const here = pointAtDistance(walk.coords, tl.cum, travelled)
       const ahead = pointAtDistance(walk.coords, tl.cum, Math.min(tl.totalKm, travelled + CAM.lookAheadKm))
       const cur = m.getBearing()
@@ -251,6 +258,14 @@ export default function FlyoverScreen() {
       <button className="flyover__exit" onClick={() => goto('preview')} aria-label="Exit fly-over">
         ✕
       </button>
+
+      <div className="flyover__speed">
+        {SPEEDS.map((s) => (
+          <button key={s} className={speed === s ? 'is-on' : ''} onClick={() => setSpeed(s)}>
+            {s}×
+          </button>
+        ))}
+      </div>
 
       {scene?.kind === 'intro' && (
         <div className="flyover__title">
