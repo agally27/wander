@@ -37,12 +37,21 @@ export interface Timeline {
 }
 
 export const CAM = {
-  travelPitch: 60,
-  travelZoom: 16,
-  stopPitch: 34,
-  stopZoom: 17,
-  lookAheadKm: 0.16,
-  bearingEase: 0.07,
+  travelPitch: 58,
+  travelZoom: 16.6,
+  // Closer to travelPitch than before — real footpaths swap between "travel"
+  // and "stop" framing at every single stop, and a big pitch swing each time
+  // reads as the camera angle constantly changing. A smaller gap keeps the
+  // settle-and-zoom feel without the repeated tilt.
+  stopPitch: 48,
+  stopZoom: 17.4,
+  // A real pedestrian path has small kinks (jogs round corners, footpath
+  // nodes placed a little unevenly) that a short look-ahead reacts to every
+  // frame, making the camera swing back and forth. Looking further ahead
+  // and easing more slowly both damp that out in favour of the path's
+  // overall direction of travel.
+  lookAheadKm: 0.3,
+  bearingEase: 0.045,
 }
 
 const INTRO_MS = 3000

@@ -25,6 +25,19 @@ export type GenProgress = 'sizing' | 'mapping' | 'finding' | 'choosing' | 'routi
 
 const SPEED_KMH: Record<Pace, number> = { stroll: 3.6, brisk: 4.8 }
 const STOP_MIN = 4
+/**
+ * How far a real place's true OSM location can sit from the drawn route and
+ * still honestly be called "along the walk" — about the width of a city
+ * block. Selection happens against the SCOUT route, but the FINAL route
+ * (after re-routing through every pick, or a fallback to the scout route if
+ * that call fails) can land further away — a park's centroid is often deep
+ * inside it, and out-and-back's scout is just a rough reach in one
+ * direction, not routed through picks at all. Snapping alone would still
+ * force a marker onto the line, but that's dishonest if the real place
+ * isn't actually there: past this distance a stop is demoted to a nameless
+ * wander spot rather than claiming a café or shop the walk doesn't pass.
+ */
+const STRAY_CAP_KM = 0.08
 
 export interface GenerateParams {
   vibe: VibeId
@@ -139,32 +152,40 @@ export async function generateWalk(
     // final line — otherwise stop numbers zig-zag back and forth on the map.
     .sort((a, b) => a.alongKm - b.alongKm)
 
-  const strayed = placed.filter((p) => p.c.fromMap && p.offKm > 0.15)
+  const strayed = placed.filter((p) => p.c.fromMap && p.offKm > STRAY_CAP_KM)
   if (strayed.length) {
-    console.warn(`[wander] ${strayed.length} stop(s) sat >150 m off the route and were pulled onto it`,
-      strayed.map((p) => ({ name: p.c.name, offMetres: Math.round(p.offKm * 1000) })))
+    console.warn(
+      `[wander] ${strayed.length} stop(s) sat >${STRAY_CAP_KM * 1000}m from the route — demoted to wander spots rather than claiming a place the walk doesn't pass`,
+      strayed.map((p) => ({ name: p.c.name, offMetres: Math.round(p.offKm * 1000) })),
+    )
   }
 
   let prevKm = 0
   let etaMin = 0
   const stops: Stop[] = placed.map((p, i) => {
     const c = p.c
-    const content = contentFor(c.category)
+    // Too far from where the route actually ended up: don't claim a real
+    // place the walk doesn't genuinely pass — fall back to an honest,
+    // unnamed pause instead.
+    const isReal = c.fromMap && p.offKm <= STRAY_CAP_KM
+    const category = isReal ? c.category : 'wander'
+    const name = isReal ? c.name : undefined
+    const content = contentFor(category)
     // Distance along the path, not straight-line — matches what you walk.
     const distFromPrevKm = Math.max(0, p.alongKm - prevKm)
     etaMin += (distFromPrevKm / speed) * 60 + (i === 0 ? 0 : STOP_MIN)
     prevKm = p.alongKm
     return {
       id: `s${i + 1}`,
-      title: c.name ? c.name : pick(content.titles, rng),
-      placeName: c.name,
+      title: name ? name : pick(content.titles, rng),
+      placeName: name,
       coord: p.coord,
-      placeCoord: c.fromMap ? c.coord : undefined,
-      category: c.category,
+      placeCoord: isReal ? c.coord : undefined,
+      category,
       order: i + 1,
       blurb: pick(content.blurbs, rng),
       note: pick(content.notes, rng),
-      teaser: teaserFor(c.category),
+      teaser: teaserFor(category),
       distFromPrevKm,
       etaMin: Math.round(etaMin),
       status: i === 0 ? 'next' : 'ahead',
@@ -212,17 +233,36 @@ export function reconcileWalk(walk: Walk): Walk {
     .map((s) => {
       const raw = s.placeCoord ?? s.coord
       const snapped = snapToPolyline(walk.coords, cum, raw)
-      return { s, coord: snapped.coord, alongKm: snapped.alongKm }
+      return { s, coord: snapped.coord, alongKm: snapped.alongKm, offKm: snapped.offKm }
     })
     .sort((a, b) => a.alongKm - b.alongKm)
 
   let prevKm = 0
   let etaMin = 0
-  const stops = placed.map(({ s, coord, alongKm }, i) => {
+  const stops = placed.map(({ s, coord, alongKm, offKm }, i) => {
+    // Same honesty check as generateWalk: a walk saved before this existed
+    // may already be claiming a real place its route never actually passes.
+    const isReal = !!s.placeName && offKm <= STRAY_CAP_KM
+    const category = isReal ? s.category : 'wander'
+    const rng = seeded(`${s.id}|${s.coord.join(',')}`)
+    const content = contentFor(category)
     const distFromPrevKm = Math.max(0, alongKm - prevKm)
     etaMin += (distFromPrevKm / speed) * 60 + (i === 0 ? 0 : STOP_MIN)
     prevKm = alongKm
-    return { ...s, coord, order: i + 1, distFromPrevKm, etaMin: Math.round(etaMin) }
+    return {
+      ...s,
+      coord,
+      category,
+      placeName: isReal ? s.placeName : undefined,
+      placeCoord: isReal ? s.placeCoord : undefined,
+      title: isReal ? s.title : pick(content.titles, rng),
+      blurb: isReal ? s.blurb : pick(content.blurbs, rng),
+      note: isReal ? s.note : pick(content.notes, rng),
+      teaser: teaserFor(category),
+      order: i + 1,
+      distFromPrevKm,
+      etaMin: Math.round(etaMin),
+    }
   })
   return { ...walk, stops }
 }
