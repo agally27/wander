@@ -66,18 +66,22 @@ export async function generateWalk(
   const oneWayKm = shape === 'outAndBack' ? targetKm / 2 : targetKm
 
   onProgress('finding')
-  // Search a disc around the start BEFORE committing to any direction — wide
-  // enough to comfortably cover wherever a loop/reach this size could end
-  // up, on any heading. Searching first (rather than scouting blind, then
-  // searching only near the paths we happened to guess) means we actually
-  // know where real places are before aiming the walk.
-  const reachKm =
+  // The one-way distance the walk would reach without any stretching (see
+  // below) — for a loop that's its radius, for out-and-back its outbound
+  // reach. Search well beyond it (a loop's farthest point is on the far
+  // side of the circle, ~2x radius, plus headroom for the stretch below) —
+  // wide enough that a genuinely good cluster just past the naive edge is
+  // still visible to bestClusterFor, not just ones already comfortably
+  // inside it. Searching before scouting means we know where real places
+  // are before aiming the walk, rather than only checking near paths we
+  // happened to guess.
+  const naiveReachKm =
     shape === 'outAndBack'
       ? Math.max(0.15, oneWayKm * 0.8)
-      : Math.max(0.18, (targetKm / (2 * Math.PI)) * 0.8) * 2
+      : Math.max(0.18, (targetKm / (2 * Math.PI)) * 0.8)
   let candidates: Candidate[] = []
   try {
-    candidates = await findCandidates([start.coord], reachKm * 1.15 + 0.15)
+    candidates = await findCandidates([start.coord], naiveReachKm * 2.8 + 0.15)
   } catch (e) {
     candidates = [] // Overpass down → wander spots carry the walk
     console.warn('[wander] Could not reach Overpass — falling back to wander spots', e)
@@ -88,15 +92,35 @@ export async function generateWalk(
   // walk at it (tight spread of headings around it) instead of guessing;
   // otherwise fall back to the original blind 120°-apart spread — honestly,
   // there's nothing to aim at.
-  const biasedHeading = bestHeadingFor(start.coord, candidates, vibe)
-  const baseHeading = biasedHeading ?? Math.floor(rng() * 360)
-  const offsets = biasedHeading != null ? [-32, 0, 32] : [0, 120, 240]
+  const cluster = bestClusterFor(start.coord, candidates, vibe)
+  const baseHeading = cluster?.headingDeg ?? Math.floor(rng() * 360)
+  const offsets = cluster ? [-32, 0, 32] : [0, 120, 240]
+
+  // A real destination worth walking to (a proper high street, say) can sit
+  // a little past a naive duration-derived radius — finding the right
+  // direction is wasted if the loop is then too small to actually get
+  // there. Stretch the target distance toward a genuinely good cluster,
+  // capped so a short walk request can't balloon far past what was asked.
+  let effectiveTargetKm = targetKm
+  let effectiveOneWayKm = oneWayKm
+  if (cluster) {
+    const wantReachKm = cluster.distanceKm * 1.08 // a little past it, so the loop can wrap around/through it
+    const maxReachKm = naiveReachKm * 1.35
+    if (wantReachKm > naiveReachKm && wantReachKm <= maxReachKm) {
+      if (shape === 'outAndBack') {
+        effectiveOneWayKm = wantReachKm / 0.8 // undo outAndBackWaypoints' own correction factor
+      } else {
+        effectiveTargetKm = (wantReachKm / 0.8) * 2 * Math.PI // undo loopWaypoints': r = (targetKm/2π)·0.8
+      }
+    }
+  }
+
   const scoutResults = await Promise.allSettled(
     offsets.map((off) =>
       fetchWalkRoute(
         shape === 'outAndBack'
-          ? outAndBackWaypoints(start.coord, oneWayKm, baseHeading + off)
-          : loopWaypoints(start.coord, targetKm, baseHeading + off),
+          ? outAndBackWaypoints(start.coord, effectiveOneWayKm, baseHeading + off)
+          : loopWaypoints(start.coord, effectiveTargetKm, baseHeading + off),
         speed,
       ),
     ),
@@ -284,31 +308,45 @@ export function reconcileWalk(walk: Walk): Walk {
   return { ...walk, stops }
 }
 
+export interface ClusterHint {
+  headingDeg: number
+  /** weighted-average distance from start to the top candidates — used to
+   *  decide whether the walk's target distance should stretch to reach it */
+  distanceKm: number
+}
+
 /**
- * A heading to aim the walk toward, if there's a genuinely appealing
- * cluster of real places for this vibe nearby — otherwise null, so the
- * caller falls back to an honest blind spread instead of chasing noise.
- * The circular mean keeps two clusters on opposite sides of the start from
- * cancelling out into a meaningless average.
+ * Where to aim the walk, if there's a genuinely appealing cluster of real
+ * places for this vibe nearby — otherwise null, so the caller falls back to
+ * an honest blind spread instead of chasing noise. The circular mean keeps
+ * two clusters on opposite sides of the start from cancelling out into a
+ * meaningless average heading.
  */
-export function bestHeadingFor(start: LngLat, candidates: Candidate[], vibe: VibeId): number | null {
+export function bestClusterFor(start: LngLat, candidates: Candidate[], vibe: VibeId): ClusterHint | null {
   const scored = candidates
-    .map((c) => ({ c, s: (VIBE_AFFINITY[vibe][c.category] ?? 0.3) + (c.name ? 0.4 : 0) }))
+    .map((c) => ({
+      c,
+      s: (VIBE_AFFINITY[vibe][c.category] ?? 0.3) + (c.name ? 0.4 : 0),
+      d: haversineKm(start, c.coord),
+    }))
     .sort((a, b) => b.s - a.s)
   const top = scored.slice(0, Math.min(8, Math.max(3, Math.ceil(scored.length * 0.35))))
   if (!top.length || top[0].s < 1.3) return null
 
   let sinSum = 0
   let cosSum = 0
+  let distSum = 0
   let wSum = 0
-  for (const { c, s } of top) {
+  for (const { c, s, d } of top) {
     const rad = (bearingDeg(start, c.coord) * Math.PI) / 180
     sinSum += Math.sin(rad) * s
     cosSum += Math.cos(rad) * s
+    distSum += d * s
     wSum += s
   }
   if (!wSum) return null
-  return (((Math.atan2(sinSum, cosSum) * 180) / Math.PI) % 360 + 360) % 360
+  const headingDeg = (((Math.atan2(sinSum, cosSum) * 180) / Math.PI) % 360 + 360) % 360
+  return { headingDeg, distanceKm: distSum / wSum }
 }
 
 interface Chosen {
