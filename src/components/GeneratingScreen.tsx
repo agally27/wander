@@ -2,9 +2,9 @@ import { useApp } from '../store'
 import type { GenProgress } from '../lib/generator'
 
 const STEPS: { key: GenProgress; label: string }[] = [
-  { key: 'sizing', label: 'Sizing the loop' },
-  { key: 'mapping', label: 'Scouting routes on real footpaths' },
-  { key: 'finding', label: 'Finding real places nearby' },
+  { key: 'sizing', label: 'Sizing the walk' },
+  { key: 'finding', label: 'Looking at what’s nearby' },
+  { key: 'mapping', label: 'Aiming the walk that way' },
   { key: 'choosing', label: 'Choosing the best stops for your vibe' },
   { key: 'routing', label: 'Threading the walk through them' },
   { key: 'ready', label: 'Ready' },

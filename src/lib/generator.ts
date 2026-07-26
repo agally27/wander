@@ -1,5 +1,5 @@
 import type { Walk, Pace, Place, Stop, StopCategory, LngLat, VibeId, WalkShape } from './types'
-import { cumulativeKm, haversineKm, pointAtDistance, seeded, snapToPolyline } from './geo'
+import { bearingDeg, cumulativeKm, haversineKm, pointAtDistance, seeded, snapToPolyline } from './geo'
 import { fetchWalkRoute, loopWaypoints, outAndBackWaypoints, type RawRoute } from './api/routing'
 import { findCandidates, type Candidate } from './api/discoveries'
 import { contentFor, pick, walkIntro, walkTitle, teaserFor } from './content'
@@ -10,8 +10,10 @@ import { GROUP_OF, VIBE_AFFINITY, type VarietyGroup } from './vibes'
  * engine.
  *
  *   1. size a loop from duration + pace
- *   2. scout THREE candidate loops in different directions
- *   3. ask Overpass what real places sit near all of them (one query)
+ *   2. search broadly around the start for real places (one query) — wide
+ *      enough to cover wherever a loop of this size could reach
+ *   3. if a genuinely good cluster for this vibe exists, aim the scout
+ *      headings toward it rather than guessing blind; scout THREE loops
  *   4. keep the loop whose surroundings score best for this vibe
  *   5. rank candidates on proximity · vibe affinity · named-place bonus ·
  *      variety, and select one per route segment so stops stay spaced
@@ -63,10 +65,34 @@ export async function generateWalk(
   // should aim for half the total distance the user asked for
   const oneWayKm = shape === 'outAndBack' ? targetKm / 2 : targetKm
 
+  onProgress('finding')
+  // Search a disc around the start BEFORE committing to any direction — wide
+  // enough to comfortably cover wherever a loop/reach this size could end
+  // up, on any heading. Searching first (rather than scouting blind, then
+  // searching only near the paths we happened to guess) means we actually
+  // know where real places are before aiming the walk.
+  const reachKm =
+    shape === 'outAndBack'
+      ? Math.max(0.15, oneWayKm * 0.8)
+      : Math.max(0.18, (targetKm / (2 * Math.PI)) * 0.8) * 2
+  let candidates: Candidate[] = []
+  try {
+    candidates = await findCandidates([start.coord], reachKm * 1.15 + 0.15)
+  } catch (e) {
+    candidates = [] // Overpass down → wander spots carry the walk
+    console.warn('[wander] Could not reach Overpass — falling back to wander spots', e)
+  }
+
   onProgress('mapping')
-  const baseHeading = Math.floor(rng() * 360)
+  // If there's a genuinely appealing cluster for this vibe nearby, aim the
+  // walk at it (tight spread of headings around it) instead of guessing;
+  // otherwise fall back to the original blind 120°-apart spread — honestly,
+  // there's nothing to aim at.
+  const biasedHeading = bestHeadingFor(start.coord, candidates, vibe)
+  const baseHeading = biasedHeading ?? Math.floor(rng() * 360)
+  const offsets = biasedHeading != null ? [-32, 0, 32] : [0, 120, 240]
   const scoutResults = await Promise.allSettled(
-    [0, 120, 240].map((off) =>
+    offsets.map((off) =>
       fetchWalkRoute(
         shape === 'outAndBack'
           ? outAndBackWaypoints(start.coord, oneWayKm, baseHeading + off)
@@ -81,15 +107,6 @@ export async function generateWalk(
   if (!scouts.length) {
     const firstErr = scoutResults[0] as PromiseRejectedResult
     throw firstErr.reason instanceof Error ? firstErr.reason : new Error('No walking route found from here')
-  }
-
-  onProgress('finding')
-  let candidates: Candidate[] = []
-  try {
-    candidates = await findCandidates(scouts.flatMap((s) => s.coords.filter((_, i) => i % 4 === 0)))
-  } catch (e) {
-    candidates = [] // Overpass down → wander spots carry the walk
-    console.warn('[wander] Could not reach Overpass — falling back to wander spots', e)
   }
 
   onProgress('choosing')
@@ -267,6 +284,33 @@ export function reconcileWalk(walk: Walk): Walk {
   return { ...walk, stops }
 }
 
+/**
+ * A heading to aim the walk toward, if there's a genuinely appealing
+ * cluster of real places for this vibe nearby — otherwise null, so the
+ * caller falls back to an honest blind spread instead of chasing noise.
+ * The circular mean keeps two clusters on opposite sides of the start from
+ * cancelling out into a meaningless average.
+ */
+export function bestHeadingFor(start: LngLat, candidates: Candidate[], vibe: VibeId): number | null {
+  const scored = candidates
+    .map((c) => ({ c, s: (VIBE_AFFINITY[vibe][c.category] ?? 0.3) + (c.name ? 0.4 : 0) }))
+    .sort((a, b) => b.s - a.s)
+  const top = scored.slice(0, Math.min(8, Math.max(3, Math.ceil(scored.length * 0.35))))
+  if (!top.length || top[0].s < 1.3) return null
+
+  let sinSum = 0
+  let cosSum = 0
+  let wSum = 0
+  for (const { c, s } of top) {
+    const rad = (bearingDeg(start, c.coord) * Math.PI) / 180
+    sinSum += Math.sin(rad) * s
+    cosSum += Math.cos(rad) * s
+    wSum += s
+  }
+  if (!wSum) return null
+  return (((Math.atan2(sinSum, cosSum) * 180) / Math.PI) % 360 + 360) % 360
+}
+
 interface Chosen {
   coord: LngLat
   name?: string
@@ -312,9 +356,15 @@ export function rankAndSelect(
       }
       return { ...c, offKm: best, t: cum[bi] / total }
     })
-    // Keep picks genuinely close to the walked line — anything further would
-    // have to be dragged a long way onto the route to be reachable.
-    .filter((c) => c.offKm < 0.22 && c.t > 0.03 && c.t < 0.97)
+    // Keep picks genuinely close to the walked line. This is measured
+    // against the SCOUT route, not the final one re-routed through the
+    // picks — so it needs headroom over STRAY_CAP_KM (the final honesty
+    // check) for that difference, but not so much that we select things
+    // that are essentially guaranteed to fail it: a candidate let through
+    // here on a loose tolerance can still cost the walk a real stop later,
+    // and worse, can make a scout loop LOOK richer than it can honestly
+    // deliver, skewing which loop direction gets chosen.
+    .filter((c) => c.offKm < STRAY_CAP_KM + 0.04 && c.t > 0.03 && c.t < 0.97)
 
   const chosen: Chosen[] = []
   const usedCats = new Map<StopCategory, number>()
