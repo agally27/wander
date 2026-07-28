@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl, { Map as MLMap, Marker } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { buildPaperStyle } from '../lib/mapStyle'
@@ -31,6 +31,7 @@ export default function MapCanvas(props: {
   onPickRef.current = props.onPick
   const onStopClickRef = useRef(props.onStopClick)
   onStopClickRef.current = props.onStopClick
+  const [styleReady, setStyleReady] = useState(false)
 
   useEffect(() => {
     if (!el.current) return
@@ -41,7 +42,16 @@ export default function MapCanvas(props: {
       zoom: 14,
       attributionControl: { compact: true },
     })
-    m.on('load', () => {
+    // 'style.load', NOT 'load'. MapLibre only fires 'load' once every
+    // resource has downloaded AND a complete frame has been rendered — on a
+    // weak connection that can be badly delayed, or never happen at all.
+    // The DOM markers below don't wait for anything, so hanging the route
+    // layers off 'load' is what let stops appear on a map with no line
+    // under them, at a camera that never got fitted to the route.
+    // 'style.load' fires as soon as the (inline) style is parsed and its
+    // layers exist — no network involved — so the line is drawn from the
+    // same data, at the same time, as the markers.
+    m.on('style.load', () => {
       m.addSource('route', { type: 'geojson', data: EMPTY_FC })
       m.addLayer({
         id: 'route-halo', type: 'line', source: 'route',
@@ -54,6 +64,7 @@ export default function MapCanvas(props: {
         paint: { 'line-color': '#D98A3D', 'line-width': 4, 'line-dasharray': [0.1, 1.8] },
       })
       syncRoute(m)
+      setStyleReady(true)
     })
     m.on('click', (e) => {
       onPickRef.current?.([e.lngLat.lng, e.lngLat.lat])
@@ -81,18 +92,14 @@ export default function MapCanvas(props: {
 
   useEffect(() => {
     const m = map.current
-    if (!m) return
-    const apply = () => {
-      syncRoute(m)
-      if (props.coords?.length && !props.follow) {
-        const [sw, ne] = bboxOf(props.coords)
-        m.fitBounds([sw, ne], { padding: 48, duration: 600 })
-      }
+    if (!m || !styleReady) return
+    syncRoute(m)
+    if (props.coords?.length && !props.follow) {
+      const [sw, ne] = bboxOf(props.coords)
+      m.fitBounds([sw, ne], { padding: 48, duration: 600 })
     }
-    if (m.isStyleLoaded()) apply()
-    else m.once('load', apply)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.coords])
+  }, [props.coords, styleReady])
 
   // MapLibre repositions a Marker by writing `style.transform` directly onto
   // the element it was given, on every camera frame. If our own CSS puts a
@@ -103,7 +110,9 @@ export default function MapCanvas(props: {
   // pulse ring all live on child elements instead.
   useEffect(() => {
     const m = map.current
-    if (!m) return
+    // Gated on the same signal as the route line, so a stop can never be
+    // drawn onto a map that has no line for it to sit on.
+    if (!m || !styleReady) return
     markers.current.forEach((mk) => mk.remove())
     markers.current = []
     props.stops?.forEach((s, i) => {
@@ -130,7 +139,7 @@ export default function MapCanvas(props: {
       }
       markers.current.push(new Marker({ element: anchor }).setLngLat(s.coord).addTo(m))
     })
-  }, [props.stops])
+  }, [props.stops, styleReady])
 
   useEffect(() => {
     const m = map.current

@@ -87,21 +87,41 @@ const HILLY_GAIN_M = 80
  */
 export function camFor(walk: Walk): CamProfile {
   const gain = walk.elevationGainM ?? 0
-  if (gain < HILLY_GAIN_M) {
-    // Flat/urban: unchanged framing, no terrain — so extruded buildings are
-    // the 3D interest, and markers sit exactly on the trail line.
-    return { ...CAM, terrain: false, exaggeration: 1 }
-  }
+  if (gain < HILLY_GAIN_M) return { ...CAM, terrain: false, exaggeration: 1 }
+  // Hilly: still pull the camera back and lift it, so a hill walk is framed
+  // as a hill walk rather than a face-full of ground. Terrain displacement
+  // itself stays off — see TERRAIN_DISABLED below.
   return {
     ...CAM,
     travelPitch: 52,
     travelZoom: 15,
     stopPitch: 45,
     stopZoom: 15.8,
-    terrain: true,
+    terrain: TERRAIN_DISABLED,
     exaggeration: 1,
   }
 }
+
+/**
+ * 3D terrain displacement is off, deliberately.
+ *
+ * MapLibre renders these two things through different paths: a `line` layer
+ * is DRAPED — rasterised flat, then projected onto the elevation mesh —
+ * while `circle`/`symbol` layers and DOM markers are placed as geometry at
+ * a queried elevation. With terrain on, the two disagree, and the numbered
+ * stops visibly detach from the trail they are supposed to sit on. Measured
+ * in a real browser against a smooth, continuous DEM (not just a synthetic
+ * one): stops landed ~115px off their own line, versus pixel-perfect with
+ * terrain off.
+ *
+ * A walk whose stops don't line up with its route is broken in a way that
+ * relief shading doesn't come close to paying for, so terrain stays off
+ * until the two can be made to agree. Everything needed to switch it back
+ * on — the DEM source, the camera profile, the setTerrain call — is still
+ * in place behind this flag. Sky/atmosphere is unaffected and stays on:
+ * it's drawn at the horizon and touches no geometry.
+ */
+const TERRAIN_DISABLED = false
 
 const INTRO_MS = 3000
 const LAUNCH_MS = 1900

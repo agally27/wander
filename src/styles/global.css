@@ -495,13 +495,6 @@ h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-s
 }
 .flyover__dots button.is-on { background: var(--accent); border-color: var(--accent); }
 
-.fly-pin { position: relative; width: 26px; height: 26px; }
-.fly-pin__badge {
-  position: absolute; inset: 0; border-radius: 50%;
-  background: linear-gradient(155deg, #FFFFFF, #FBF5EA); border: 2.5px solid var(--accent);
-  color: var(--accent-ink); display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 12px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-}
 
 .preview-map__fly {
   position: absolute; bottom: 10px; right: 10px; z-index: 3; border: none;

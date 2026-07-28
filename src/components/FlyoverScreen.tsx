@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl, { Map as MLMap, Marker } from 'maplibre-gl'
+import maplibregl, { Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useApp } from '../store'
 import { buildPaperStyle } from '../lib/mapStyle'
@@ -47,7 +47,6 @@ export default function FlyoverScreen() {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<MLMap | null>(null)
   const raf = useRef(0)
-  const markers = useRef<Marker[]>([])
   const reduced = useRef(prefersReducedMotion())
 
   const [sceneIdx, setSceneIdx] = useState(0)
@@ -80,7 +79,11 @@ export default function FlyoverScreen() {
       attributionControl: { compact: true },
       interactive: false,
     })
-    m.on('load', () => {
+    // 'style.load', not 'load' — see MapCanvas. 'load' waits for a fully
+    // downloaded, fully rendered first frame, so on a weak connection none
+    // of this ran: no trail layers, no extruded buildings, and crucially no
+    // setTerrain/setSky call, which is why terrain and sky never showed up.
+    m.on('style.load', () => {
       m.addSource('trail', { type: 'geojson', data: EMPTY_FC })
       m.addLayer({
         id: 'trail-halo', type: 'line', source: 'trail',
@@ -92,6 +95,35 @@ export default function FlyoverScreen() {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#D98A3D', 'line-width': 5, 'line-dasharray': [0.1, 1.7] },
       })
+      // Stops are drawn as MAP LAYERS here, not DOM markers.
+      //
+      // With terrain on, a line layer is draped onto the elevation surface
+      // while a DOM marker is positioned separately against it — the two
+      // drift apart, which is what put the numbered stops visibly off their
+      // own trail. Drawing both from the same source, in the same render
+      // pipeline, means they cannot disagree: the numbers ride the line
+      // whether the ground under them is flat or a mountainside.
+      m.addSource('stops', { type: 'geojson', data: EMPTY_FC })
+      m.addLayer({
+        id: 'stops-dot', type: 'circle', source: 'stops',
+        paint: {
+          'circle-radius': 13,
+          'circle-color': '#FFFBF4',
+          'circle-stroke-color': '#B5793A',
+          'circle-stroke-width': 2.5,
+        },
+      })
+      m.addLayer({
+        id: 'stops-num', type: 'symbol', source: 'stops',
+        layout: {
+          'text-field': ['get', 'n'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 13,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: { 'text-color': '#8A5A26' },
+      })
       // Extruded buildings — the 3D interest on a town walk, and what makes
       // a pitched camera worth pitching in a built-up area.
       if (m.getLayer('buildings-3d')) m.setLayoutProperty('buildings-3d', 'visibility', 'visible')
@@ -102,17 +134,21 @@ export default function FlyoverScreen() {
       // testing for no visible gain, which is what knocked the numbered
       // stops out of alignment with their own trail line.
       try {
+        // Sky/atmosphere always: it's drawn at the horizon behind everything
+        // and touches no geometry, so a pitched camera gets a real horizon
+        // whether or not terrain displacement is in play.
+        m.setSky({
+          'sky-color': '#cfe3ea',
+          'horizon-color': '#f1ead9',
+          'fog-color': '#f1ead9',
+          'fog-ground-blend': 0.5,
+          'horizon-fog-blend': 0.6,
+          'sky-horizon-blend': 0.6,
+          'atmosphere-blend': 0.6,
+        })
+        // Terrain displacement is currently disabled — see cinematic.ts.
         if (CAM.terrain && m.getSource('terrain-dem')) {
           m.setTerrain({ source: 'terrain-dem', exaggeration: CAM.exaggeration })
-          m.setSky({
-            'sky-color': '#cfe3ea',
-            'horizon-color': '#f1ead9',
-            'fog-color': '#f1ead9',
-            'fog-ground-blend': 0.5,
-            'horizon-fog-blend': 0.6,
-            'sky-horizon-blend': 0.6,
-            'atmosphere-blend': 0.6,
-          })
         }
       } catch (e) {
         console.warn('[wander] Terrain/sky setup failed — continuing flat', e)
@@ -150,27 +186,26 @@ export default function FlyoverScreen() {
     return () => {
       canvas.removeEventListener('webglcontextlost', onContextLost, false)
       cancelAnimationFrame(raf.current)
-      markers.current.forEach((mk) => mk.remove())
       m.remove()
       map.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey, CAM])
 
-  // stop markers — plain anchors, no transforms (MapLibre owns those)
+  // stops — fed into the map layers added above, so they share the trail's
+  // rendering path and stay locked to it over terrain
   useEffect(() => {
     const m = map.current
     if (!m || !ready) return
-    markers.current.forEach((mk) => mk.remove())
-    markers.current = walk.stops.map((s, i) => {
-      const anchor = document.createElement('div')
-      anchor.className = 'fly-pin'
-      const badge = document.createElement('div')
-      badge.className = 'fly-pin__badge'
-      badge.textContent = String(i + 1)
-      anchor.appendChild(badge)
-      return new Marker({ element: anchor }).setLngLat(s.coord).addTo(m)
-    })
+    const src = m.getSource('stops') as maplibregl.GeoJSONSource | undefined
+    src?.setData({
+      type: 'FeatureCollection',
+      features: walk.stops.map((s, i) => ({
+        type: 'Feature',
+        properties: { n: String(i + 1) },
+        geometry: { type: 'Point', coordinates: s.coord },
+      })),
+    } as any)
   }, [ready, walk.stops])
 
   // ── the performance ─────────────────────────────────────
